@@ -43,6 +43,8 @@ namespace MonsterAdventure.Core
             s.Balls = Math.Max(0, s.Balls);
             s.Potions = Math.Max(0, s.Potions);
             s.Money = Math.Max(0, s.Money);
+            s.QuizDay = Math.Max(0, s.QuizDay);
+            s.QuizAttempts = Math.Max(0, s.QuizAttempts);
             if (!WorldMap.InBounds(s.X, s.Y)) { s.X = WorldMap.VillageX; s.Y = WorldMap.VillageY + 1; }
             return true;
         }

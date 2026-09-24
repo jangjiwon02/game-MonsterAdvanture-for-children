@@ -26,6 +26,13 @@ namespace MonsterAdventure.Core
         /// <summary>마지막 접속 시각(UTC). 서버 출석 보너스 판정용.</summary>
         public DateTime LastLoginUtc = DateTime.MinValue;
 
+        /// <summary>수학 퀴즈: 마지막으로 푼 날(QuizGate.DayKey, UTC). 0 이면 아직 없음.</summary>
+        public int QuizDay;
+        /// <summary>QuizDay 날의 시도 횟수.</summary>
+        public int QuizAttempts;
+        /// <summary>오답 후 이 시각(UTC)부터 다시 도전할 수 있다.</summary>
+        public DateTime QuizRetryUtc = DateTime.MinValue;
+
         public static PlayerState NewGame(GameData data, int starterSpeciesId)
         {
             var s = new PlayerState();

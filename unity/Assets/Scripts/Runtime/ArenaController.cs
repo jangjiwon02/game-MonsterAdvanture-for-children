@@ -314,6 +314,16 @@ namespace MonsterAdventure
             var tile = _map[x, y];
             if (tile == Tile.CenterDoor) StartCoroutine(ArenaHealScene());
             else if (tile == Tile.ShopDoor) StartCoroutine(ArenaShopScene());
+            else if (tile == Tile.SchoolDoor) StartCoroutine(ArenaSchoolQuiz());
+        }
+
+        /// <summary>남산초 수학 퀴즈. 돈·시도 기록이 바뀔 때마다 SyncState 로 서버 계정에 되돌려 보낸다.</summary>
+        IEnumerator ArenaSchoolQuiz()
+        {
+            BeginArenaScene();
+            yield return SchoolQuizScene.Run(_ui, _localState, new SystemRng(), () => System.DateTime.UtcNow, SyncState);
+            _localPlayer.Teleport(_localPlayer.TileX, _localPlayer.TileY, Direction.Down);
+            EndArenaScene();
         }
 
         int? FindAdjacentAvatar()
@@ -372,15 +382,16 @@ namespace MonsterAdventure
             BeginArenaScene();
             for (;;)
             {
-                var items = new[] { "몬스터", "가방", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "닫기" };
+                var items = new[] { "몬스터", "가방", "도감", "저장", "명단", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "닫기" };
                 yield return _ui.Choose(items,
                     new MenuOptions { Rect = new Rect(UiKit.VirtualWidth - 146, 8, 138, items.Length * 26 + 16), Cancel = true });
                 int i = _ui.Choice;
-                if (i == -1 || i == 5) break;
+                if (i == -1 || i == 6) break;
                 if (i == 0) yield return ArenaPartyMenu();
                 else if (i == 1) yield return ArenaBagMenu();
                 else if (i == 2) yield return _ui.DexScreen(_localState);
                 else if (i == 3) { SyncState(); yield return _ui.Say("저장했다!", 500); }
+                else if (i == 4) yield return _ui.RosterScreen();
                 else { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
             }
             EndArenaScene();
