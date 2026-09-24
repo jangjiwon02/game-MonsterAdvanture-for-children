@@ -34,7 +34,17 @@ namespace MonsterAdventure
         bool _afterFaint;
         bool _ballVisible; Vector2 _ballPos; float _ballRot;
 
+        // 볼 투척: BallisticThrow 는 y 가 위쪽 양수라서 화면 좌표(y 아래로 증가)의 y 를 뒤집어 넘긴다.
+        // 속도 520·중력 600 이면 아군→적까지 약 0.6초로, 예전 투척 연출 길이와 비슷하다.
+        static readonly Vec2 ThrowStart = new Vec2(110, -190), ThrowTarget = new Vec2(355, -108);
+        const double ThrowSpeed = 520, ThrowGravity = 600, ThrowRadius = 30, ThrowAimRange = 0.35;
+        bool _aiming; ThrowResult _aimPreview, _lastThrow;
+
         static Texture2D _background, _ball;
+
+        /// <summary>이번 전투의 날씨(None 이면 없음). Run 전에 호출한 쪽이 정한다.</summary>
+        public WeatherKind Weather = WeatherKind.None;
+        public int WeatherTurns = 5;
 
         public BattleOutcome Outcome => _s.Outcome;
 
@@ -51,6 +61,9 @@ namespace MonsterAdventure
         public IEnumerator Run(Monster enemy)
         {
             _s = new BattleSession(_data, _state, enemy, _rng);
+            _s.CaptureMode = CaptureMode.ThreeShake;    // 흔들림 3회 판정(웹 골든과 무관한 Legacy 는 테스트용으로만 남는다)
+            if (Weather != WeatherKind.None) _s.Observers.Add(new WeatherObserver(Weather, WeatherTurns));
+            _lastThrow = null; _aiming = false;
             _dhpEnemy = enemy.Hp;
             _dhpPlayer = _s.Active.Hp;
             _shownSpecies = _s.Active.SpeciesId; _shownLevel = _s.Active.Level;
@@ -74,6 +87,9 @@ namespace MonsterAdventure
             _vp.S = 0f;
             yield return _ui.Say($"가라! {PlayerName}!", 500);
             yield return GameUi.Tween(.3f, p => _vp.S = p);
+
+            // 전투 시작 훅(날씨 등)의 안내를 첫 행동 선택 전에 보여준다. 관찰자가 없으면 아무 이벤트도 없다.
+            foreach (var ev in _s.Begin()) yield return PlayEvent(ev);
 
             while (!_s.IsOver)
             {
@@ -112,7 +128,8 @@ namespace MonsterAdventure
                 if (i == 0)
                 {
                     if (_state.Balls <= 0) { yield return _ui.Say("몬스터볼이 없다!"); yield break; }
-                    _picked = new BallAction();
+                    yield return AimThrow();     // 각도를 맞춰 던진다 — 결과(_picked)는 X 로 취소하면 null
+                    yield break;
                 }
                 else
                 {
@@ -239,6 +256,30 @@ namespace MonsterAdventure
                 case BattleEventKind.BallThrown:
                     yield return ThrowBall();
                     break;
+                case BattleEventKind.BallMissed:
+                    // 궤적이 목표 원을 못 지났다 — 볼만 잃고 곧바로 적의 차례가 된다.
+                    yield return GameUi.Tween(.2f, p => _ballPos += new Vector2(6f * (1f - p), -14f * Mathf.Sin(p * Mathf.PI)));
+                    _ballVisible = false;
+                    yield return _ui.Say("몬스터볼이 빗나갔다!", 800);
+                    break;
+
+                // 옵저버(날씨·특성·도구)가 만든 이벤트: 문장은 Core 가 이미 만들어 준다.
+                case BattleEventKind.WeatherStarted:
+                case BattleEventKind.WeatherEnded:
+                case BattleEventKind.ObserverNotice:
+                    if (!string.IsNullOrEmpty(e.Text)) yield return _ui.Say(e.Text, 800);
+                    break;
+                case BattleEventKind.ResidualDamage:
+                    Sfx.Play(SfxKind.Hit);
+                    SetBlink(e.Side == Side.Player, true);
+                    yield return GameUi.Wait(.4f);
+                    SetBlink(e.Side == Side.Player, false);
+                    if (!string.IsNullOrEmpty(e.Text)) yield return _ui.Say(e.Text, 700);
+                    break;
+                case BattleEventKind.ResidualHeal:
+                    Sfx.Play(SfxKind.Heal);
+                    if (!string.IsNullOrEmpty(e.Text)) yield return _ui.Say(e.Text, 700);
+                    break;
                 case BattleEventKind.CatchAttempt:
                     yield return ShakeBall(e.Catch);
                     break;
@@ -287,18 +328,70 @@ namespace MonsterAdventure
             }
         }
 
+        /// <summary>
+        /// 던질 각도를 고른다: 정답 각도(SolveAngle) 둘레를 좌우로 왕복하는 각도로 궤적 미리보기가 움직이고,
+        /// Z 로 던진다(X 는 취소 → _picked 가 null 이라 행동 선택으로 돌아간다). 명중 여부·품질은 BallisticThrow 가
+        /// 정하므로 여기엔 난수가 없다.
+        /// </summary>
+        IEnumerator AimThrow()
+        {
+            _picked = null;
+            double ideal = BallisticThrow.SolveAngle(ThrowStart, ThrowSpeed, ThrowGravity, ThrowTarget) ?? 0.6;
+            GameInput.Instance.Flush();
+            _aiming = true;
+            float t0 = Time.time;
+            for (;;)
+            {
+                float swing = Mathf.PingPong((Time.time - t0) / .9f, 1f) * 2f - 1f;   // -1..1 왕복
+                _aimPreview = BallisticThrow.Simulate(ThrowStart, ThrowSpeed, ideal + swing * ThrowAimRange, ThrowGravity, ThrowTarget, ThrowRadius);
+                if (GameInput.Instance.TryDequeue(out var key))
+                {
+                    if (key == GameKey.Cancel) { _aiming = false; yield break; }
+                    if (key == GameKey.Ok) break;
+                }
+                yield return null;
+            }
+            _aiming = false;
+            _lastThrow = _aimPreview;
+            _picked = new BallAction(_lastThrow.Hit, BallisticThrow.ThrowQualityMultiplier(_lastThrow.Quality));
+        }
+
         IEnumerator ThrowBall()
         {
             yield return _ui.Say("몬스터볼을 던졌다!", 300);
             Vector2 from = new Vector2(110, 190), to = new Vector2(355, 108);
+            var r = _lastThrow;
             _ballVisible = true; _ballPos = from; _ballRot = 0f;
-            yield return GameUi.Tween(.6f, p =>
+            if (r == null)
             {
-                _ballPos = new Vector2(Mathf.Lerp(from.x, to.x, p), Mathf.Lerp(from.y, to.y, p) - Mathf.Sin(p * Mathf.PI) * 70f);
-                _ballRot = p * 12f;
-            });
+                yield return GameUi.Tween(.6f, p =>
+                {
+                    _ballPos = new Vector2(Mathf.Lerp(from.x, to.x, p), Mathf.Lerp(from.y, to.y, p) - Mathf.Sin(p * Mathf.PI) * 70f);
+                    _ballRot = p * 12f;
+                });
+            }
+            else
+            {
+                // 계산된 궤적을 그대로 따라 날아간다(고정 dt 표본 → 비행 시간에 맞춰 보간).
+                var path = r.Path;
+                yield return GameUi.Tween(Mathf.Max(.25f, (float)r.FlightTime), p =>
+                {
+                    float f = p * (path.Count - 1);
+                    int i = Mathf.Min(path.Count - 2, Mathf.FloorToInt(f)); float k = f - i;
+                    if (i < 0) { _ballPos = new Vector2((float)path[0].X, -(float)path[0].Y); return; }
+                    _ballPos = new Vector2(Mathf.Lerp((float)path[i].X, (float)path[i + 1].X, k), -Mathf.Lerp((float)path[i].Y, (float)path[i + 1].Y, k));
+                    _ballRot = p * 12f;
+                });
+            }
+            if (r != null && !r.Hit) yield break;      // 빗나감: 뒤이은 BallMissed 이벤트가 마무리한다
+
             yield return GameUi.Tween(.25f, p => { _ve.S = 1f - p; _ve.A = 1f - p * .5f; });
             yield return GameUi.Tween(.3f, p => _ballPos = new Vector2(to.x, to.y + 28f * p));
+            if (r != null && r.Excellent)
+            {
+                Sfx.Play(SfxKind.Crit);
+                yield return _ui.Say("훌륭한 투척이다!", 600);
+            }
         }
 
         IEnumerator ShakeBall(CatchResult r)
@@ -342,6 +435,7 @@ namespace MonsterAdventure
             MonsterArt.DrawAt(enemySp, 355 + _ve.X, 108 + _ve.Y + bobE, 34 * _ve.S, _ve.A * BlinkAlpha(_ve, t));
             MonsterArt.DrawAt(playerSp, 125 + _vp.X, 176 + _vp.Y + bobP, 44 * _vp.S, _vp.A * BlinkAlpha(_vp, t));
 
+            if (_aiming) DrawAim();
             if (_ballVisible) DrawBall();
 
             DrawInfo(enemySp, _s.Enemy.Level, _dhpEnemy, _s.Enemy.MaxHp, 14, 14, 208, false, 0);
@@ -368,6 +462,22 @@ namespace MonsterAdventure
             if (!player) return;
             UiKit.Text($"{Mathf.CeilToInt(dhp)} / {maxHp}", x + w - 10, y + 38, 11, Color.white, TextAnchor.UpperRight);
             UiKit.Bar(x + 10, y + 54, w - 20, 4, (float)exp / Growth.ExpToNext(level), UiKit.C("#58a8f8"));
+        }
+
+        /// <summary>조준 중: 지금 각도로 던졌을 때의 궤적을 점으로, 명중 판정 원을 테두리 점으로 보여준다.</summary>
+        void DrawAim()
+        {
+            if (_aimPreview == null) return;
+            var path = _aimPreview.Path;
+            var dot = _aimPreview.Hit ? UiKit.C("#ffd84a") : UiKit.C("#ffffff");
+            for (int i = 0; i < path.Count; i += 5)
+                UiKit.Fill((float)path[i].X - 1.5f, -(float)path[i].Y - 1.5f, 3f, 3f, dot);
+            for (int a = 0; a < 24; a++)
+            {
+                float th = a / 24f * Mathf.PI * 2f;
+                UiKit.Fill((float)ThrowTarget.X + Mathf.Cos(th) * (float)ThrowRadius - 1f, -(float)ThrowTarget.Y + Mathf.Sin(th) * (float)ThrowRadius - 1f, 2f, 2f, UiKit.C("#ffffff"));
+            }
+            UiKit.Text("Z: 던지기   X: 취소", 356, 6, 12, Color.white, TextAnchor.UpperCenter, true);
         }
 
         void DrawBall()
