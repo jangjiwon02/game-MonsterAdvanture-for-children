@@ -95,6 +95,16 @@ namespace MonsterAdventure
             }
             if (!cam.TryGetComponent<CameraRig>(out var rig)) rig = cam.gameObject.AddComponent<CameraRig>();
             rig.Target = Player.transform;
+            _rig = rig;
+
+            if (UseVisibleSpawns)
+            {
+                // 풀숲에서 눈에 보이는 야생 몬스터가 배회하고, 가까이 가면 카메라가 확대되며 전투가 시작된다.
+                _spawner = new GameObject("Spawner").AddComponent<OverworldSpawner>();
+                _spawner.Init(Map, Data, Player, Rng);
+                _spawner.ContactGate = () => !InScene;
+                _spawner.Contact += actor => StartCoroutine(EncounterRoutine(actor.Monster, actor));
+            }
 
             Bgm.Play(BgmKind.World);
         }
@@ -107,6 +117,12 @@ namespace MonsterAdventure
                 StartCoroutine(WorldMenu());
         }
 
+        /// <summary>true 면 필드 위 야생 몬스터와 접촉해서 전투를 시작한다(OverworldSpawner). false 면 옛 랜덤 풀숲 조우.</summary>
+        public static bool UseVisibleSpawns = true;
+
+        OverworldSpawner _spawner;
+        CameraRig _rig;
+
         void OnStepped(int x, int y)
         {
             State.X = x; State.Y = y;
@@ -115,8 +131,8 @@ namespace MonsterAdventure
             if (tile == Tile.CenterDoor) StartCoroutine(HealScene());
             else if (tile == Tile.ShopDoor) StartCoroutine(ShopScene());
             else if (tile == Tile.SchoolDoor) StartCoroutine(SchoolQuizRoutine());
-            // 풀숲 한 칸 이동마다 14% 로 야생 몬스터가 나타난다.
-            else if (WildEncounter.ShouldEncounter(tile, Rng))
+            // 눈에 보이는 스폰을 끄면(UseVisibleSpawns=false) 예전처럼 풀숲 한 칸 이동마다 14% 로 야생 몬스터가 나타난다.
+            else if (!UseVisibleSpawns && WildEncounter.ShouldEncounter(tile, Rng))
             {
                 var wild = WildEncounter.Generate(Data, x, y, Rng);
                 wild.RollIndividualValues(Data);   // 야생 개체마다 실제로 개체값이 다르다(웹 골든 테스트와 무관한 별도 단계)
@@ -130,10 +146,15 @@ namespace MonsterAdventure
         /* ---------------------------------- 전투 ---------------------------------- */
 
         /// <summary>야생 몬스터와의 전투 한 판. 끝나면 월드로 돌아와 조작이 다시 풀린다.</summary>
-        public IEnumerator EncounterRoutine(Monster wild)
+        public IEnumerator EncounterRoutine(Monster wild, WildActor actor = null)
         {
             BeginScene();
             InBattle = true;
+            _spawner?.Pause();
+
+            // 필드에서 접촉한 경우: 씬 전환 없이 그 자리에서 카메라가 두 몬스터 사이로 확대된다.
+            if (actor != null && _rig != null)
+                yield return BattleCameraDirector.ZoomToEncounter(_rig, BattleCameraDirector.Midpoint(Player.WorldPosition, actor.WorldPosition), .6f);
 
             Bgm.Play(BgmKind.Battle);
             var battle = new BattleController(this, Ui, Data, State, Rng) { Weather = RollWeather() };
@@ -146,10 +167,21 @@ namespace MonsterAdventure
                 State.ApplyDefeat();
                 Player.Teleport(State.X, State.Y, Direction.Down);
             }
+            // 화면이 검게 덮여 있는 동안 카메라를 원래대로 돌리고, 접촉한 몬스터를 정리한다.
+            if (actor != null)
+            {
+                if (_rig != null) yield return BattleCameraDirector.ZoomBack(_rig, .3f);
+                if (_spawner != null)
+                {
+                    bool gone = battle.Outcome == BattleOutcome.Win || battle.Outcome == BattleOutcome.Caught;
+                    if (gone) _spawner.Despawn(actor); else _spawner.SetCooldown(actor, 4f);   // 도망·패배면 잠시 뒤에야 다시 접촉
+                }
+            }
             InBattle = false;
             yield return GameUi.Tween(.3f, p => Ui.Fade = 1f - p);
             if (lost) yield return Ui.Say("당신은 네잎클로버지역아동센터에서 눈을 떴다...\n소지금이 절반으로 줄었다.");
             EndScene();
+            _spawner?.Resume();
         }
 
         /// <summary>야생 전투에 날씨가 낄 확률(0 이면 끔). 맑음·비·모래바람 중 하나가 같은 확률로 뽑힌다.</summary>
