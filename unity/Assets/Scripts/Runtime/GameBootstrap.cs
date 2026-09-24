@@ -117,8 +117,9 @@ namespace MonsterAdventure
                 StartCoroutine(WorldMenu());
         }
 
-        /// <summary>true 면 필드 위 야생 몬스터와 접촉해서 전투를 시작한다(OverworldSpawner). false 면 옛 랜덤 풀숲 조우.</summary>
-        public static bool UseVisibleSpawns = true;
+        /// <summary>true 면 필드 위에 보이는 야생 몬스터와 접촉해서 전투를 시작한다(OverworldSpawner).
+        /// 기본값 false: 원래대로 풀숲을 지나다 한 칸마다 14% 로 우연히 마주친다(몬스터는 필드에 보이지 않는다).</summary>
+        public static bool UseVisibleSpawns = false;
 
         OverworldSpawner _spawner;
         CameraRig _rig;
@@ -152,9 +153,12 @@ namespace MonsterAdventure
             InBattle = true;
             _spawner?.Pause();
 
-            // 필드에서 접촉한 경우: 씬 전환 없이 그 자리에서 카메라가 두 몬스터 사이로 확대된다.
-            if (actor != null && _rig != null)
-                yield return BattleCameraDirector.ZoomToEncounter(_rig, BattleCameraDirector.Midpoint(Player.WorldPosition, actor.WorldPosition), .6f);
+            // 씬 전환 없이 그 자리에서 카메라가 확대된다(풀숲 조우면 플레이어 쪽으로, 보이는 몬스터와 접촉했으면 둘 사이로).
+            if (_rig != null)
+            {
+                var focus = actor != null ? BattleCameraDirector.Midpoint(Player.WorldPosition, actor.WorldPosition) : Player.WorldPosition;
+                yield return BattleCameraDirector.ZoomToEncounter(_rig, focus, actor != null ? .6f : .45f);
+            }
 
             Bgm.Play(BgmKind.Battle);
             var battle = new BattleController(this, Ui, Data, State, Rng) { Weather = RollWeather() };
@@ -167,15 +171,12 @@ namespace MonsterAdventure
                 State.ApplyDefeat();
                 Player.Teleport(State.X, State.Y, Direction.Down);
             }
-            // 화면이 검게 덮여 있는 동안 카메라를 원래대로 돌리고, 접촉한 몬스터를 정리한다.
-            if (actor != null)
+            // 화면이 검게 덮여 있는 동안 카메라를 원래대로 돌리고, 접촉한 몬스터가 있었으면 정리한다.
+            if (_rig != null) yield return BattleCameraDirector.ZoomBack(_rig, .3f);
+            if (actor != null && _spawner != null)
             {
-                if (_rig != null) yield return BattleCameraDirector.ZoomBack(_rig, .3f);
-                if (_spawner != null)
-                {
-                    bool gone = battle.Outcome == BattleOutcome.Win || battle.Outcome == BattleOutcome.Caught;
-                    if (gone) _spawner.Despawn(actor); else _spawner.SetCooldown(actor, 4f);   // 도망·패배면 잠시 뒤에야 다시 접촉
-                }
+                bool gone = battle.Outcome == BattleOutcome.Win || battle.Outcome == BattleOutcome.Caught;
+                if (gone) _spawner.Despawn(actor); else _spawner.SetCooldown(actor, 4f);   // 도망·패배면 잠시 뒤에야 다시 접촉
             }
             InBattle = false;
             yield return GameUi.Tween(.3f, p => Ui.Fade = 1f - p);
