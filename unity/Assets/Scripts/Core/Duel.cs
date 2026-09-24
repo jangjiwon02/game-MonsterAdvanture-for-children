@@ -46,12 +46,15 @@ namespace MonsterAdventure.Core
         public string WhyNotMove(DuelSide side, string moveId) =>
             Of(side).Moves.Contains(moveId) ? null : "배우지 않은 기술이다!";
 
-        /// <summary>양쪽이 고른 기술로 한 라운드를 판정한다. 스피드가 빠른 쪽이 먼저(동률이면 무작위).</summary>
+        /// <summary>양쪽이 고른 기술로 한 라운드를 판정한다. 스피드가 빠른 쪽이 먼저(동률이면 무작위).
+        /// GameData.HasPriorityMoves 면 기술 우선도 > 스피드 > 50:50 순(TurnOrder)으로 정한다.</summary>
         public IEnumerable<DuelEvent> ResolveRound(string moveA, string moveB)
         {
             if (IsOver) throw new InvalidOperationException("이미 끝난 대결이다.");
             var moveOf = new Dictionary<DuelSide, string> { [DuelSide.A] = moveA, [DuelSide.B] = moveB };
-            bool aFirst = EnemyAI.PlayerMovesFirst(A.Speed, B.Speed, _rng);
+            bool aFirst = _data.HasPriorityMoves
+                ? TurnOrder.FirstMovesFirst(_data.GetMove(moveA).Priority, A.Speed, _data.GetMove(moveB).Priority, B.Speed, _rng)
+                : EnemyAI.PlayerMovesFirst(A.Speed, B.Speed, _rng);
             foreach (var side in aFirst ? new[] { DuelSide.A, DuelSide.B } : new[] { DuelSide.B, DuelSide.A })
             {
                 foreach (var e in UseMove(side, moveOf[side])) yield return e;
