@@ -136,7 +136,7 @@ namespace MonsterAdventure
             InBattle = true;
 
             Bgm.Play(BgmKind.Battle);
-            var battle = new BattleController(this, Ui, Data, State, Rng);
+            var battle = new BattleController(this, Ui, Data, State, Rng) { Weather = RollWeather() };
             yield return battle.Run(wild);          // 끝나면 화면이 검게 덮여 있다
             Bgm.Play(BgmKind.World);
 
@@ -150,6 +150,15 @@ namespace MonsterAdventure
             yield return GameUi.Tween(.3f, p => Ui.Fade = 1f - p);
             if (lost) yield return Ui.Say("당신은 네잎클로버지역아동센터에서 눈을 떴다...\n소지금이 절반으로 줄었다.");
             EndScene();
+        }
+
+        /// <summary>야생 전투에 날씨가 낄 확률(0 이면 끔). 맑음·비·모래바람 중 하나가 같은 확률로 뽑힌다.</summary>
+        public const double WeatherChance = 0.2;
+
+        WeatherKind RollWeather()
+        {
+            if (Rng.NextDouble() >= WeatherChance) return WeatherKind.None;
+            return (WeatherKind)(1 + Rng.Range(0, 2));
         }
 
         /* ---------------------------------- 문 이벤트 ---------------------------------- */
