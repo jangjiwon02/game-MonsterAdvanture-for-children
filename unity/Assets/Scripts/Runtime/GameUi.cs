@@ -303,6 +303,63 @@ namespace MonsterAdventure
             UiKit.Text("X/Z: 목록으로", UiKit.VirtualWidth - 12, UiKit.VirtualHeight - 26, 11, UiKit.C("#9aa2d0"), TextAnchor.UpperRight);
         }
 
+        /// <summary>옵션 명단: 교사 1명 + 학생 목록. Z/X 로 닫는다.</summary>
+        public IEnumerator RosterScreen()
+        {
+            GameInput.Instance.Flush();
+            _overlay = DrawRoster;
+            for (;;)
+            {
+                var wait = new WaitForKey();
+                yield return wait;
+                if (wait.Key == GameKey.Ok || wait.Key == GameKey.Cancel) break;
+            }
+            _overlay = null;
+        }
+
+        void DrawRoster()
+        {
+            UiKit.FillScreen(Color.black);
+            UiKit.Fill(0, 0, UiKit.VirtualWidth, UiKit.VirtualHeight, UiKit.C("#1e2748"));
+            UiKit.Text("명단", 12, 10, 16, UiKit.C("#ffd84a"), bold: true);
+
+            UiKit.Text("교사", 16, 40, 13, UiKit.C("#cfd6f5"), bold: true);
+            UiKit.Box(16, 58, 448, 34, UiKit.C("#33427a"), UiKit.C("#ffd84a"));
+            UiKit.Text(Roster.Teacher, 240, 65, 17, Color.white, TextAnchor.UpperCenter, true);
+
+            var st = Roster.Students;
+            UiKit.Text($"학생  {st.Count}명", 16, 104, 13, UiKit.C("#cfd6f5"), bold: true);
+            for (int i = 0; i < st.Count; i++)
+            {
+                float x = 16 + (i % 2) * 228, y = 124 + (i / 2) * 32;
+                UiKit.Box(x, y, 220, 28, UiKit.C("#1b2340"), UiKit.C("#8a92c0"));
+                UiKit.Text($"{i + 1}", x + 10, y + 6, 12, UiKit.C("#9aa2d0"));
+                UiKit.Text(st[i], x + 40, y + 5, 15, Color.white, bold: true);
+            }
+            UiKit.Text("X/Z: 닫기", UiKit.VirtualWidth - 12, UiKit.VirtualHeight - 26, 11, UiKit.C("#9aa2d0"), TextAnchor.UpperRight);
+        }
+
+        /// <summary>수학 퀴즈 한 문제: 큰 글씨 문제 + 4지선다 메뉴. 결과는 Choice(0~3, X 로 그만두면 -1).</summary>
+        public IEnumerator QuizChoose(string header, string question, IList<string> choices)
+        {
+            _overlay = () => DrawQuiz(header, question);
+            yield return Choose(choices, new MenuOptions
+            {
+                Rect = new Rect(90, 140, 300, 72), Cols = 2, Cancel = true, Full = true,
+                Prompt = "정답을 골라 보세요!   (X: 그만두기)",
+            });
+            _overlay = null;
+        }
+
+        void DrawQuiz(string header, string question)
+        {
+            UiKit.FillScreen(Color.black);
+            UiKit.Fill(0, 0, UiKit.VirtualWidth, UiKit.VirtualHeight, UiKit.C("#1e2748"));
+            UiKit.Text(header, UiKit.VirtualWidth / 2f, 14, 13, UiKit.C("#ffd84a"), TextAnchor.UpperCenter, true);
+            UiKit.Box(60, 42, 360, 74, UiKit.C("#0a0d1a"), Color.white);
+            UiKit.Text(question, UiKit.VirtualWidth / 2f, 60, 34, Color.white, TextAnchor.UpperCenter, true);
+        }
+
         /// <summary>플레이어가 이름 등을 직접 타이핑해서 넣는다. 터치 기기는 OS 키보드, 데스크톱은 자체 입력창을 그린다.
         /// 빈 문자열도 그대로 돌려준다(빈 값 처리는 호출한 쪽이 한다).</summary>
         public IEnumerator EnterText(string prompt, int maxLength, Action<string> onDone)
