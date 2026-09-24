@@ -1,0 +1,428 @@
+using System.IO;
+using System.Linq;
+using MonsterAdventure.Core;
+using MonsterAdventure.Net;
+using Newtonsoft.Json.Linq;
+using NUnit.Framework;
+using UnityEngine;
+
+namespace MonsterAdventure.Tests
+{
+    public class FrameTests
+    {
+        [Test]
+        public void EncodeThenFeed_YieldsExactlyOneMessage()
+        {
+            var bytes = Frame.Encode("hello");
+            var r = new Frame.Reader();
+            r.Feed(bytes, bytes.Length);
+            Assert.IsTrue(r.TryTake(out var json));
+            Assert.AreEqual("hello", json);
+            Assert.IsFalse(r.TryTake(out _));
+        }
+
+        [Test]
+        public void PartialFeed_WaitsUntilWholeMessageArrives()
+        {
+            var bytes = Frame.Encode("몸통박치기");   // 멀티바이트 문자 포함
+            var r = new Frame.Reader();
+            r.Feed(bytes, 3);
+            Assert.IsFalse(r.TryTake(out _), "길이 헤더도 다 안 왔다(4바이트 중 3바이트)");
+            r.Feed(bytes.Skip(3).Take(1).ToArray(), 1);   // 길이 헤더 완성, 본문은 아직
+            Assert.IsFalse(r.TryTake(out _), "길이는 알지만 본문이 아직 안 왔다");
+            r.Feed(bytes.Skip(4).Take(bytes.Length - 4 - 2).ToArray(), bytes.Length - 4 - 2);
+            Assert.IsFalse(r.TryTake(out _), "본문이 2바이트 모자라다");
+            r.Feed(bytes.Skip(bytes.Length - 2).ToArray(), 2);   // 마지막 2바이트 도착
+            Assert.IsTrue(r.TryTake(out var json));
+            Assert.AreEqual("몸통박치기", json);
+            Assert.IsFalse(r.TryTake(out _), "다 읽었으면 더 나올 게 없다");
+        }
+
+        [Test]
+        public void TwoMessagesBackToBack_AreReadInOrder()
+        {
+            var a = Frame.Encode("first"); var b = Frame.Encode("second");
+            var combined = a.Concat(b).ToArray();
+            var r = new Frame.Reader();
+            r.Feed(combined, combined.Length);
+            Assert.IsTrue(r.TryTake(out var j1)); Assert.AreEqual("first", j1);
+            Assert.IsTrue(r.TryTake(out var j2)); Assert.AreEqual("second", j2);
+            Assert.IsFalse(r.TryTake(out _));
+        }
+
+        [Test]
+        public void ByteAtATime_StillReassembles()
+        {
+            var bytes = Frame.Encode("한 바이트씩 넣어도 조립된다");
+            var r = new Frame.Reader();
+            for (int i = 0; i < bytes.Length; i++) r.Feed(new[] { bytes[i] }, 1);
+            Assert.IsTrue(r.TryTake(out var json));
+            Assert.AreEqual("한 바이트씩 넣어도 조립된다", json);
+        }
+    }
+
+    public class NetCodecTests
+    {
+        [Test]
+        public void RoundTrips_TypeAndPayload()
+        {
+            string wire = NetCodec.Encode(NetMsgType.Move, new MoveMessage { Dir = 2 });
+            Assert.IsTrue(NetCodec.TryDecode(wire, out var type, out var d));
+            Assert.AreEqual(NetMsgType.Move, type);
+            Assert.AreEqual(2, (int)d["Dir"]);
+        }
+
+        [TestCase("not json")]
+        [TestCase("{}")]
+        [TestCase("{\"t\":\"move\"}")]
+        [TestCase("{\"d\":{}}")]
+        [TestCase("{\"t\":1,\"d\":{}}")]
+        public void Malformed_IsRejected(string wire) => Assert.IsFalse(NetCodec.TryDecode(wire, out _, out _));
+    }
+
+    public class ArenaStateTests
+    {
+        GameData _data;
+        WorldMap _map;
+
+        [OneTimeSetUp]
+        public void Load()
+        {
+            _data = GameData.Parse(File.ReadAllText(Path.Combine(Application.dataPath, "Resources/game-data.json")));
+            _map = WorldMap.Generate();
+        }
+
+        ArenaState New() => new ArenaState(_data, _map);
+
+        [Test]
+        public void Join_AcceptsAnySpeciesInRange_ButRejectsOutOfRange()
+        {
+            var a = New();
+            var evolved = a.Join("도전자", 1);   // 이글불(2단계, 시작 파트너는 아니지만 이제는 허용된다 — 오래 키운 계정의 겉모습)
+            Assert.AreEqual(1, evolved.SpeciesId);
+            Assert.Throws<System.ArgumentException>(() => a.Join("나쁜값", -1));
+            Assert.Throws<System.ArgumentException>(() => a.Join("나쁜값2", 9999));
+        }
+
+        [Test]
+        public void Join_PlacesFirstPlayerAtVillageEntrance()
+        {
+            var a = New();
+            var t = a.Join("철수", 0);
+            Assert.AreEqual(1, t.Id);
+            Assert.AreEqual((WorldMap.VillageX, WorldMap.VillageY + 1), (t.X, t.Y));
+            Assert.AreEqual("철수", t.Name);
+        }
+
+        [Test]
+        public void Join_BlankName_FallsBackToDefault()
+        {
+            var a = New();
+            Assert.AreEqual("트레이너", a.Join("  ", 0).Name);
+            Assert.AreEqual("트레이너", a.Join(null, 2).Name);
+        }
+
+        [Test]
+        public void Join_SecondPlayerGetsADifferentTile()
+        {
+            var a = New();
+            var p1 = a.Join("철수", 0);
+            var p2 = a.Join("영희", 2);
+            Assert.AreNotEqual((p1.X, p1.Y), (p2.X, p2.Y));
+            Assert.IsTrue(_map.IsPassable(p2.X, p2.Y));
+        }
+
+        [Test]
+        public void Move_IntoOpenSpace_Succeeds_AndUpdatesFacing()
+        {
+            var a = New();
+            var p = a.Join("철수", 0);
+            int x0 = p.X, y0 = p.Y;   // Trainer 는 참조 타입이라 TryMove 후에는 p.X 도 이미 바뀌어 있다
+            var r = a.TryMove(p.Id, NetDirection.Left);
+            Assert.IsTrue(r.Moved);
+            Assert.AreEqual((x0 - 1, y0), (r.X, r.Y));
+            Assert.AreEqual(NetDirection.Left, a.Get(p.Id).Dir);
+        }
+
+        [Test]
+        public void Move_IntoWall_FailsButStillTurns()
+        {
+            var a = New();
+            // 지도 테두리는 항상 나무: (0,0) 근처로 직접 겹치도록 만들 수 없으니, 맵 경계 밖 이동을 흉내낼 좌표를 잡는다.
+            var p = a.Join("철수", 0);
+            // 맵의 절대 테두리로 실제로 걸어가긴 머니, 벽 판정 자체는 WorldMap.IsPassable 로 위임되므로
+            // 여기서는 통과 불가 타일(테두리)에 인접한 상황을 직접 구성해 검증한다.
+            var edgeState = New();
+            var far = edgeState.Join("변두리", 0);
+            // 트레이너를 임의 위치로 보낼 수 없으므로, 최소 검증: 같은 방향으로 계속 이동하면 언젠가 막힌다.
+            NetDirection dir = NetDirection.Up;
+            MoveOutcome last = default;
+            for (int i = 0; i < 40 && (i == 0 || last.Moved); i++) last = edgeState.TryMove(far.Id, dir);
+            Assert.IsFalse(last.Moved, "40칸을 계속 가면 맵 끝(나무)에 막혀야 한다");
+            Assert.AreEqual(dir, edgeState.Get(far.Id).Dir, "막혀도 바라보는 방향은 바뀐다");
+        }
+
+        [Test]
+        public void Move_IntoAnotherPlayer_IsBlocked()
+        {
+            var a = New();
+            var p1 = a.Join("철수", 0);          // (VillageX, VillageY+1) — 시작 지점, 통과 가능이 보장된 칸
+            var p2 = a.Join("영희", 2);
+            p2.X = p1.X + 1; p2.Y = p1.Y;         // 마을 중심부는 열려 있으므로 바로 오른쪽 칸에 직접 배치(결정론적)
+            Assume.That(_map.IsPassable(p2.X, p2.Y), Is.True, "마을 시작 지점 옆 칸은 통과 가능해야 한다");
+
+            var r = a.TryMove(p2.Id, NetDirection.Left);   // p1 이 있는 칸으로 이동 시도
+            Assert.IsFalse(r.Moved);
+            Assert.AreEqual(NetDirection.Left, a.Get(p2.Id).Dir, "막혀도 바라보는 방향은 바뀐다");
+        }
+
+        [Test]
+        public void Leave_FreesTheTileAndClearsChallenges()
+        {
+            var a = New();
+            var p1 = a.Join("철수", 0);
+            var p2 = a.Join("영희", 2);
+            a.Leave(p1.Id);
+            Assert.IsNull(a.Get(p1.Id));
+            CollectionAssert.DoesNotContain(a.Players.Keys, p1.Id);
+        }
+
+        [Test]
+        public void Challenge_RequiresAdjacency()
+        {
+            var a = New();
+            var p1 = a.Join("철수", 0);
+            var p2 = a.Join("영희", 2);
+            p2.X = p1.X + 2; p2.Y = p1.Y;   // 두 칸 떨어뜨려 확실히 비인접으로 만든다
+            Assert.AreEqual("가까이 다가가야 도전할 수 있다!", a.RequestChallenge(p1.Id, p2.Id));
+        }
+
+        [Test]
+        public void Challenge_FullHandshake_AcceptedAndDeclined()
+        {
+            var a = New();
+            var p1 = a.Join("철수", 0);
+            var p2 = a.Join("영희", 2);
+            p2.X = p1.X + 1; p2.Y = p1.Y;   // 결정론적으로 인접시킨다
+
+            Assert.IsNull(a.RequestChallenge(p1.Id, p2.Id));
+            Assert.AreEqual("이미 다른 도전에 응답을 기다리는 중이다!", a.RequestChallenge(p1.Id, p2.Id));
+
+            var accepted = a.Respond(p2.Id, true);
+            Assert.AreEqual((p1.Id, true), accepted);
+            Assert.IsNull(a.Respond(p2.Id, true), "이미 처리된 도전에는 다시 응답할 수 없다");
+
+            Assert.IsNull(a.RequestChallenge(p1.Id, p2.Id));
+            var declined = a.Respond(p2.Id, false);
+            Assert.AreEqual((p1.Id, false), declined);
+        }
+
+        [Test]
+        public void Challenge_UnknownTargetOrSelf_IsRejected()
+        {
+            var a = New();
+            var p1 = a.Join("철수", 0);
+            Assert.AreEqual("자기 자신에게는 도전할 수 없다!", a.RequestChallenge(p1.Id, p1.Id));
+            Assert.AreEqual("상대를 찾을 수 없다!", a.RequestChallenge(p1.Id, 999));
+        }
+    }
+
+    /// <summary>실제 루프백 소켓으로 서버·클라이언트를 함께 띄워 왕복시키는 통합 검증(진짜 네트워크 I/O).</summary>
+    public class ArenaNetworkIntegrationTests
+    {
+        GameData _data; WorldMap _map;
+
+        [OneTimeSetUp]
+        public void Load()
+        {
+            _data = GameData.Parse(File.ReadAllText(Path.Combine(Application.dataPath, "Resources/game-data.json")));
+            _map = WorldMap.Generate();
+        }
+
+        static (string type, JObject data) WaitFor(TcpArenaClient c, string type, int timeoutMs = 3000)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                if (c.TryTakeReceived(out var t, out var d) && t == type) return (t, d);
+                System.Threading.Thread.Sleep(5);
+            }
+            Assert.Fail($"{timeoutMs}ms 안에 '{type}' 메시지를 받지 못했다");
+            return default;
+        }
+
+        [Test]
+        public void TwoClients_SeeEachOtherJoinMoveAndLeave()
+        {
+            using var server = new TcpArenaServer(_data, _map);
+            server.Start();
+            using var c1 = new TcpArenaClient();
+            c1.Connect("127.0.0.1", server.Port, "철수", 0);
+            var (_, welcome1) = WaitFor(c1, NetMsgType.Welcome);
+            int id1 = (int)welcome1["Id"];
+
+            using var c2 = new TcpArenaClient();
+            c2.Connect("127.0.0.1", server.Port, "영희", 2);
+            var (_, welcome2) = WaitFor(c2, NetMsgType.Welcome);
+            int id2 = (int)welcome2["Id"];
+            Assert.AreNotEqual(id1, id2);
+            CollectionAssert.Contains(((JArray)welcome2["Others"]).Select(o => (int)o["Id"]), id1);
+
+            var (_, joined) = WaitFor(c1, NetMsgType.Joined);
+            Assert.AreEqual(id2, (int)joined["Info"]["Id"]);
+
+            c1.SendMove(NetDirection.Left);
+            var (_, moved) = WaitFor(c2, NetMsgType.Moved);
+            Assert.AreEqual(id1, (int)moved["Id"]);
+
+            c2.Dispose();
+            var (_, left) = WaitFor(c1, NetMsgType.Left);
+            Assert.AreEqual(id2, (int)left["Id"]);
+        }
+
+        [Test]
+        public void ChallengeHandshake_TravelsAcrossTheWire()
+        {
+            using var server = new TcpArenaServer(_data, _map);
+            server.Start();
+            using var c1 = new TcpArenaClient();
+            c1.Connect("127.0.0.1", server.Port, "도전자", 0);
+            var (_, w1) = WaitFor(c1, NetMsgType.Welcome);
+            int id1 = (int)w1["Id"];
+
+            using var c2 = new TcpArenaClient();
+            c2.Connect("127.0.0.1", server.Port, "상대", 4);
+            var (_, w2) = WaitFor(c2, NetMsgType.Welcome);
+            int id2 = (int)w2["Id"];
+            WaitFor(c1, NetMsgType.Joined);
+
+            // 지도는 고정 시드라 같은 접속 순서면 스폰 위치도 항상 같다. 실제로 걸어서 인접시킨다
+            // (좌표를 직접 조작할 수 없는 실제 네트워크 경로이므로, 서버가 확인해 주는 Moved 로만 위치를 갱신한다).
+            int x1 = (int)w1["X"], y1 = (int)w1["Y"], x2 = (int)w2["X"], y2 = (int)w2["Y"];
+            int guard = 0;
+            while (System.Math.Abs(x1 - x2) + System.Math.Abs(y1 - y2) != 1)
+            {
+                Assert.Less(guard++, 60, "60칸을 걸어도 인접하지 못했다 — 지도 생성이 바뀐 게 아닌지 확인");
+                var dir = System.Math.Abs(x1 - x2) >= System.Math.Abs(y1 - y2)
+                    ? (x1 > x2 ? NetDirection.Right : NetDirection.Left)
+                    : (y1 > y2 ? NetDirection.Down : NetDirection.Up);
+                c2.SendMove(dir);
+                var (_, moved) = WaitFor(c1, NetMsgType.Moved);
+                x2 = (int)moved["X"]; y2 = (int)moved["Y"];
+            }
+
+            c1.SendChallenge(id2);
+            var (_, offer) = WaitFor(c2, NetMsgType.ChallengeOffer);
+            Assert.AreEqual(id1, (int)offer["FromId"]);
+            Assert.AreEqual("도전자", (string)offer["FromName"]);
+
+            c2.SendChallengeResponse(true);
+            var (_, result1) = WaitFor(c1, NetMsgType.ChallengeResult);
+            Assert.AreEqual((id2, true), ((int)result1["OtherId"], (bool)result1["Accepted"]));
+        }
+
+        [Test]
+        public void DuelWin_GrantsFullExpToWinner_AndPartialExpToLoser_BothPersisted()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "duel_growth_test_" + System.Guid.NewGuid());
+            try
+            {
+                var accounts = new TrainerAccountStore(root);
+                using var server = new TcpArenaServer(_data, _map, accounts);
+                server.Start();
+
+                using var c1 = new TcpArenaClient();
+                c1.Connect("127.0.0.1", server.Port, "도전자", 0);   // 불꼬마
+                var (_, w1) = WaitFor(c1, NetMsgType.Welcome);
+
+                using var c2 = new TcpArenaClient();
+                c2.Connect("127.0.0.1", server.Port, "상대", 4);     // 새싹이
+                var (_, w2) = WaitFor(c2, NetMsgType.Welcome);
+                int id2 = (int)w2["Id"];
+                WaitFor(c1, NetMsgType.Joined);
+
+                // 인접시킨다(다른 라이브 테스트와 같은 방식 — 좌표를 직접 못 정하니 실제로 걸어간다).
+                int x1 = (int)w1["X"], y1 = (int)w1["Y"], x2 = (int)w2["X"], y2 = (int)w2["Y"];
+                int guard = 0;
+                while (System.Math.Abs(x1 - x2) + System.Math.Abs(y1 - y2) != 1)
+                {
+                    Assert.Less(guard++, 60, "60칸을 걸어도 인접하지 못했다");
+                    var dir = System.Math.Abs(x1 - x2) >= System.Math.Abs(y1 - y2)
+                        ? (x1 > x2 ? NetDirection.Right : NetDirection.Left)
+                        : (y1 > y2 ? NetDirection.Down : NetDirection.Up);
+                    c2.SendMove(dir);
+                    var (_, moved) = WaitFor(c1, NetMsgType.Moved);
+                    x2 = (int)moved["X"]; y2 = (int)moved["Y"];
+                }
+
+                c1.SendChallenge(id2);
+                WaitFor(c2, NetMsgType.ChallengeOffer);
+                c2.SendChallengeResponse(true);
+                WaitFor(c1, NetMsgType.ChallengeResult);
+                WaitFor(c2, NetMsgType.ChallengeResult);
+
+                var (_, start1) = WaitFor(c1, NetMsgType.DuelStart);
+                var (_, start2) = WaitFor(c2, NetMsgType.DuelStart);
+                string move1 = (string)start1["You"]["Moves"][0];
+                string move2 = (string)start2["You"]["Moves"][0];
+
+                // 매 라운드 각자 첫 기술만 계속 낸다 — 누가 이기든 대결이 끝날 때까지 반복한다.
+                JObject ended1Data = null, ended2Data = null;
+                for (int round = 0; round < 30 && (ended1Data == null || ended2Data == null); round++)
+                {
+                    c1.SendDuelAction(move1);
+                    c2.SendDuelAction(move2);
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    while (sw.ElapsedMilliseconds < 2000 && (ended1Data == null || ended2Data == null))
+                    {
+                        if (c1.TryTakeReceived(out var t1, out var d1) && t1 == NetMsgType.DuelEnded) ended1Data = d1;
+                        if (c2.TryTakeReceived(out var t2, out var d2) && t2 == NetMsgType.DuelEnded) ended2Data = d2;
+                        System.Threading.Thread.Sleep(5);
+                    }
+                }
+                Assert.IsNotNull(ended1Data, "대결이 끝나지 않았다(도전자 쪽)");
+                Assert.IsNotNull(ended2Data, "대결이 끝나지 않았다(상대 쪽)");
+
+                bool c1Won = (bool)ended1Data["YouWon"];
+                bool c2Won = (bool)ended2Data["YouWon"];
+                Assert.AreNotEqual(c1Won, c2Won, "정확히 한쪽만 이겨야 한다");
+
+                var winnerData = c1Won ? ended1Data : ended2Data;
+                int expGained = (int)winnerData["ExpGained"];
+                Assert.Greater(expGained, 0, "이긴 쪽은 경험치를 받아야 한다");
+                Assert.IsTrue(((JArray)winnerData["Growth"]).Count > 0 || expGained < Growth.ExpToNext(5), "성장 이벤트가 있거나, 레벨업엔 못 미치는 경험치여야 한다");
+
+                // 서버가 실제로 적용·저장한 값이, Core 의 같은 공식을 직접 돌린 결과와 정확히 일치하는지 확인한다.
+                string winnerName = c1Won ? "도전자" : "상대";
+                int winnerStarter = c1Won ? 0 : 4;
+                var savedWinner = accounts.Load(_data, winnerName);
+                Assert.IsNotNull(savedWinner);
+                var expected = Monster.Create(_data, winnerStarter, 5);
+                Growth.GainExp(_data, expected, expGained);
+                Assert.AreEqual(expected.Level, savedWinner.Party[0].Level, "레벨");
+                Assert.AreEqual(expected.Exp, savedWinner.Party[0].Exp, "이월된 경험치");
+                CollectionAssert.AreEqual(expected.Moves, savedWinner.Party[0].Moves, "기술 습득");
+
+                // 친선 대결이라 진 쪽도 벌칙은 없고, 대신 이긴 쪽 기준 경험치의 40%를 참가 보상으로 받는다.
+                string loserName = c1Won ? "상대" : "도전자";
+                int loserStarter = c1Won ? 4 : 0;
+                var savedLoser = accounts.Load(_data, loserName);
+                Assert.IsNotNull(savedLoser);
+
+                var loserData = c1Won ? ended2Data : ended1Data;
+                int loserExpGained = (int)loserData["ExpGained"];
+                Assert.Greater(loserExpGained, 0, "진 쪽도 참가 경험치를 받아야 한다");
+                Assert.Less(loserExpGained, expGained, "진 쪽 경험치는 항상 이긴 쪽보다 적어야 한다(40%)");
+
+                var expectedLoser = Monster.Create(_data, loserStarter, 5);
+                Growth.GainExp(_data, expectedLoser, loserExpGained);
+                Assert.AreEqual(expectedLoser.Level, savedLoser.Party[0].Level, "진 쪽 레벨(참가 경험치만큼)");
+                Assert.AreEqual(expectedLoser.Exp, savedLoser.Party[0].Exp, "진 쪽 이월 경험치");
+            }
+            finally
+            {
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+    }
+}

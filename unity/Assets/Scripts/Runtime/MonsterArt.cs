@@ -1,0 +1,210 @@
+using System.Collections.Generic;
+using MonsterAdventure.Core;
+using UnityEngine;
+
+namespace MonsterAdventure
+{
+    /// <summary>
+    /// web/index.html 의 drawMon 을 옮긴 몬스터 그림(종족당 한 번만 그려 캐시한다).
+    /// 텍스처 안에서 몸통 반지름은 BodyRadius 픽셀이고, 중심은 (CenterX, CenterY)다.
+    /// 화면에 그릴 때는 웹에서 쓰던 반지름 r 에 맞춰 Scale = r / BodyRadius 로 확대·축소한다.
+    /// </summary>
+    public static class MonsterArt
+    {
+        public const int CanvasSize = 256;
+        public const float BodyRadius = 44f;
+        public const float CenterX = 128f, CenterY = 150f;
+
+        static readonly Dictionary<int, Texture2D> Cache = new Dictionary<int, Texture2D>();
+
+        public static Texture2D Get(SpeciesData sp)
+        {
+            if (Cache.TryGetValue(sp.Id, out var tex) && tex != null) return tex;
+            var p = new Painter(CanvasSize, CanvasSize);
+            Draw(p, sp);
+            tex = p.ToTexture();
+            tex.filterMode = FilterMode.Bilinear;    // 축소해서 그리므로 부드럽게
+            Cache[sp.Id] = tex;
+            return tex;
+        }
+
+        /// <summary>웹의 drawMon(sp, cx, cy, r) 과 같은 위치·크기로 IMGUI 에 그린다(가상 화면 좌표).</summary>
+        public static void DrawAt(SpeciesData sp, float cx, float cy, float r, float alpha = 1f)
+        {
+            if (r <= 0.5f || alpha <= 0.01f) return;
+            float s = r / BodyRadius;
+            UiKit.Texture(Get(sp), cx - CenterX * s, cy - CenterY * s, CanvasSize * s, CanvasSize * s, alpha);
+        }
+
+        static Color32 C(string hex, float a = 1f) => Painter.Hex(hex, a);
+
+        static void Draw(Painter p, SpeciesData sp)
+        {
+            bool st2 = sp.Stage == 2;
+            float r = BodyRadius * (st2 ? 1.15f : 1f);
+            Color32 body = C(sp.Color), belly = C(sp.Belly), O = C("#000000", .35f);
+            float cx = CenterX, cy = CenterY;
+
+            // 좌표 도우미: 몸통 중심 기준 (r 배율) → 텍스처 픽셀
+            Vector2 P(float x, float y) => new Vector2(cx + x * r, cy + y * r);
+            void Poly(Color32 fill, Color32? stroke, params float[] xy)
+            {
+                var pts = new List<Vector2>();
+                for (int i = 0; i + 1 < xy.Length; i += 2) pts.Add(P(xy[i], xy[i + 1]));
+                p.Polygon(pts, fill, stroke);
+            }
+            void Ell(float x, float y, float rx, float ry, Color32 fill, Color32? stroke = null, float rot = 0f)
+            {
+                var c = P(x, y);
+                p.Ellipse(c.x, c.y, rx * r, ry * r, fill, stroke, rot);
+            }
+            void Stroke(Color32 c, float width, params float[] xy)
+            {
+                for (int i = 0; i + 3 < xy.Length; i += 2) p.Line(P(xy[i], xy[i + 1]), P(xy[i + 2], xy[i + 3]), width, c);
+            }
+
+            string look = sp.Look;
+
+            /* 뒤쪽 파츠 */
+            if (look == "flame")
+            {
+                float k = st2 ? 1.3f : 1f;
+                Poly(C("#ff9a2e"), O, .7f, .55f, 1.25f, .55f - .7f * k, 1.0f, .75f);
+                Poly(C("#ffe060"), null, .85f, .6f, 1.1f, .55f - .35f * k, 1.0f, .72f);
+            }
+            else if (look == "bolt")
+            {
+                float m = st2 ? 1.1f : 1f, w = r * .24f;
+                var pts = new[] { .75f, .5f, 1.25f, .3f, 1.0f, .02f, 1.55f * m, -.3f };
+                Stroke(C("#ffd84a"), w, pts);
+                for (int i = 2; i < pts.Length - 2; i += 2) { var c = P(pts[i], pts[i + 1]); p.Ellipse(c.x, c.y, w / 2, w / 2, C("#ffd84a")); }   // 꺾이는 곳 메우기
+            }
+            else if (look == "wings")
+            {
+                foreach (int s in new[] { -1, 1 })
+                    Ell(s * .9f, .05f, .3f * (st2 ? 1.3f : 1f), .6f * (st2 ? 1.25f : 1f), belly, O, s * .35f);
+            }
+            else if (look == "leaf" && st2)
+            {
+                for (int i = 0; i < 6; i++)
+                {
+                    float a = i / 6f * Mathf.PI * 2f;
+                    Ell(Mathf.Cos(a) * .3f, -1.0f + Mathf.Sin(a) * .3f, .22f, .22f, C("#ff8fb8"), O);
+                }
+                Ell(0, -1.0f, .16f, .16f, C("#ffd84a"));
+            }
+            else if (look == "ears" && st2)
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    float a = i / 10f * Mathf.PI * 2f;
+                    Ell(Mathf.Cos(a) * .95f, Mathf.Sin(a) * .85f, .27f, .27f, belly, O);
+                }
+            }
+            else if (look == "fin" && st2)
+            {
+                Poly(C("#5a92e8"), O, -.4f, -.7f, -.15f, -1.35f, .05f, -.85f);
+                Poly(C("#5a92e8"), O, .4f, -.7f, .15f, -1.35f, -.05f, -.85f);
+            }
+
+            /* 몸 */
+            Ell(-.45f, .85f, .3f, .16f, body, O);
+            Ell(.45f, .85f, .3f, .16f, body, O);
+            Ell(0, 0, 1f, .9f, body, O);
+            Ell(0, .3f, .62f, .5f, belly);
+
+            /* 앞쪽 파츠 */
+            if (look == "flame")
+            {
+                float k = st2 ? 1.35f : 1f;
+                Poly(C("#ff9a2e"), O, -.35f, -.75f, -.05f, -1.55f * k, .3f, -.8f);
+                Poly(C("#ffe060"), null, -.15f, -.78f, 0f, -1.2f * k, .15f, -.8f);
+                if (st2)
+                {
+                    Poly(C("#ff9a2e"), O, .15f, -.8f, .55f, -1.3f, .6f, -.65f);
+                    Poly(C("#ff9a2e"), O, -.6f, -.65f, -.55f, -1.3f, -.15f, -.8f);
+                }
+            }
+            else if (look == "fin")
+            {
+                Poly(C("#a8d4ff"), O, -.1f, -.85f, .2f, -1.5f * (st2 ? 1.1f : 1f), .45f, -.8f);
+                Ell(-.97f, .15f, .18f, .3f, C("#a8d4ff"), O);
+                Ell(.97f, .15f, .18f, .3f, C("#a8d4ff"), O);
+            }
+            else if (look == "leaf")
+            {
+                Stroke(C("#3a8a3a"), 3f, 0f, -.85f, 0f, -1.1f);
+                foreach (int s in new[] { -1, 1 }) Ell(s * .3f, -1.2f, .34f, .17f, C("#58c84a"), O, s * .5f);
+            }
+            else if (look == "bolt")
+            {
+                float m = st2 ? 1.1f : 1f;
+                foreach (int s in new[] { -1, 1 })
+                {
+                    Poly(body, O, s * .75f, -.55f, s * .55f, -1.55f * m, s * .2f, -.8f);
+                    Poly(C("#ffd84a"), null, s * .6f, -1.1f, s * .55f, -1.55f * m, s * .4f, -1.2f);
+                    Poly(C("#ffd84a"), null, s * .5f, .12f, s * .78f, .28f, s * .6f, .3f, s * .72f, .5f);
+                }
+            }
+            else if (look == "bumps")
+            {
+                var cl = C("#7a6c54");
+                Ell(-.45f, -.78f, .22f, .2f, cl, O);
+                Ell(0, -.93f, .26f, .22f, cl, O);
+                Ell(.45f, -.78f, .22f, .2f, cl, O);
+                if (st2)
+                    foreach (int s in new[] { -1, 1 })
+                    {
+                        Poly(cl, O, s * .82f, -.2f, s * 1.3f, -.55f, s * .85f, -.5f);
+                        Poly(cl, O, s * .82f, .2f, s * 1.3f, .05f, s * .88f, -.1f);
+                    }
+            }
+            else if (look == "ears")
+            {
+                foreach (int s in new[] { -1, 1 })
+                {
+                    Ell(s * .6f, -.72f, .28f, .3f, body, O);
+                    Ell(s * .6f, -.7f, .15f, .17f, C("#ffb0c0"));
+                }
+            }
+            else if (look == "wings")
+            {
+                Poly(C("#ffb030"), O, -.14f, .05f, .14f, .05f, 0f, .32f);
+                Poly(body, O, -.1f, -.85f, 0f, -1.2f, .12f, -.85f);
+                Poly(body, O, .05f, -.85f, .25f, -1.1f, .3f, -.8f);
+            }
+            else if (look == "horn")
+            {
+                foreach (int s in new[] { -1, 1 })
+                {
+                    Poly(C("#f6ead0"), O, s * .55f, -.65f, s * .45f, -1.5f * (st2 ? 1.15f : 1f), s * .15f, -.85f);
+                    Poly(C("#d8563c"), null, s * .5f, -.9f, s * .47f, -1.2f, s * .3f, -.95f);
+                }
+            }
+
+            /* 얼굴 */
+            Ell(-.36f, -.16f, .17f, .21f, C("#ffffff"), O);
+            Ell(.36f, -.16f, .17f, .21f, C("#ffffff"), O);
+            Ell(-.34f, -.13f, .09f, .12f, C("#151515"));
+            Ell(.34f, -.13f, .09f, .12f, C("#151515"));
+            Ell(-.31f, -.18f, .035f, .035f, C("#ffffff"));
+            Ell(.37f, -.18f, .035f, .035f, C("#ffffff"));
+            if (look != "wings")
+            {
+                // 입: 중심 (0, .12r), 반지름 .16r, 각도 .15π ~ .85π 의 호
+                var mouth = new List<float>();
+                for (int i = 0; i <= 8; i++)
+                {
+                    float a = Mathf.PI * Mathf.Lerp(.15f, .85f, i / 8f);
+                    mouth.Add(Mathf.Cos(a) * .16f); mouth.Add(.12f + Mathf.Sin(a) * .16f);
+                }
+                Stroke(C("#222222"), 2f, mouth.ToArray());
+            }
+            if (st2)
+            {
+                Stroke(C("#222222"), 3f, -.6f, -.46f, -.2f, -.34f);
+                Stroke(C("#222222"), 3f, .6f, -.46f, .2f, -.34f);
+            }
+        }
+    }
+}

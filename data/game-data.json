@@ -1,0 +1,783 @@
+{
+  "types": [
+    {
+      "id": "normal",
+      "name": "노말",
+      "color": "#a8a878"
+    },
+    {
+      "id": "fire",
+      "name": "불꽃",
+      "color": "#f08030"
+    },
+    {
+      "id": "water",
+      "name": "물",
+      "color": "#6890f0"
+    },
+    {
+      "id": "grass",
+      "name": "풀",
+      "color": "#78c850"
+    },
+    {
+      "id": "electric",
+      "name": "전기",
+      "color": "#e8b810"
+    },
+    {
+      "id": "rock",
+      "name": "바위",
+      "color": "#b8a038"
+    }
+  ],
+  "typeChart": {
+    "fire": {
+      "grass": 2,
+      "water": 0.5,
+      "fire": 0.5,
+      "rock": 0.5
+    },
+    "water": {
+      "fire": 2,
+      "rock": 2,
+      "water": 0.5,
+      "grass": 0.5
+    },
+    "grass": {
+      "water": 2,
+      "rock": 2,
+      "fire": 0.5,
+      "grass": 0.5
+    },
+    "electric": {
+      "water": 2,
+      "grass": 0.5,
+      "electric": 0.5,
+      "rock": 0.5
+    },
+    "rock": {
+      "fire": 2,
+      "electric": 2,
+      "water": 0.5,
+      "grass": 0.5
+    },
+    "normal": {
+      "rock": 0.5
+    }
+  },
+  "moves": [
+    {
+      "id": "tackle",
+      "name": "몸통박치기",
+      "type": "normal",
+      "power": 40,
+      "accuracy": 100
+    },
+    {
+      "id": "scratch",
+      "name": "할퀴기",
+      "type": "normal",
+      "power": 55,
+      "accuracy": 95
+    },
+    {
+      "id": "rush",
+      "name": "돌진",
+      "type": "normal",
+      "power": 80,
+      "accuracy": 90
+    },
+    {
+      "id": "ember",
+      "name": "불꽃",
+      "type": "fire",
+      "power": 40,
+      "accuracy": 100
+    },
+    {
+      "id": "flame",
+      "name": "화염방사",
+      "type": "fire",
+      "power": 60,
+      "accuracy": 100
+    },
+    {
+      "id": "blast",
+      "name": "불대문자",
+      "type": "fire",
+      "power": 90,
+      "accuracy": 85
+    },
+    {
+      "id": "splash",
+      "name": "물총",
+      "type": "water",
+      "power": 40,
+      "accuracy": 100
+    },
+    {
+      "id": "bubble",
+      "name": "거품광선",
+      "type": "water",
+      "power": 60,
+      "accuracy": 100
+    },
+    {
+      "id": "wave",
+      "name": "파도타기",
+      "type": "water",
+      "power": 90,
+      "accuracy": 85
+    },
+    {
+      "id": "vine",
+      "name": "덩굴채찍",
+      "type": "grass",
+      "power": 40,
+      "accuracy": 100
+    },
+    {
+      "id": "leaf",
+      "name": "잎날가르기",
+      "type": "grass",
+      "power": 60,
+      "accuracy": 100
+    },
+    {
+      "id": "solar",
+      "name": "솔라빔",
+      "type": "grass",
+      "power": 90,
+      "accuracy": 85
+    },
+    {
+      "id": "shock",
+      "name": "전기쇼크",
+      "type": "electric",
+      "power": 40,
+      "accuracy": 100
+    },
+    {
+      "id": "volt",
+      "name": "10만볼트",
+      "type": "electric",
+      "power": 60,
+      "accuracy": 100
+    },
+    {
+      "id": "thunder",
+      "name": "천둥",
+      "type": "electric",
+      "power": 90,
+      "accuracy": 80
+    },
+    {
+      "id": "pebble",
+      "name": "돌던지기",
+      "type": "rock",
+      "power": 40,
+      "accuracy": 100
+    },
+    {
+      "id": "slide",
+      "name": "락슬라이드",
+      "type": "rock",
+      "power": 60,
+      "accuracy": 95
+    },
+    {
+      "id": "edge",
+      "name": "스톤에지",
+      "type": "rock",
+      "power": 90,
+      "accuracy": 80
+    }
+  ],
+  "species": [
+    {
+      "id": 0,
+      "name": "불꼬마",
+      "type": "fire",
+      "look": "flame",
+      "stage": 1,
+      "color": "#f4743b",
+      "belly": "#ffd9a0",
+      "baseStats": {
+        "hp": 45,
+        "atk": 52,
+        "def": 43,
+        "spd": 62
+      },
+      "evolve": {
+        "level": 16,
+        "to": 1
+      },
+      "catchRate": 0.5,
+      "baseExp": 60,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "ember"
+        },
+        {
+          "level": 14,
+          "move": "flame"
+        },
+        {
+          "level": 27,
+          "move": "blast"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "이글불",
+      "type": "fire",
+      "look": "flame",
+      "stage": 2,
+      "color": "#e4502b",
+      "belly": "#ffc27a",
+      "baseStats": {
+        "hp": 68,
+        "atk": 82,
+        "def": 64,
+        "spd": 82
+      },
+      "evolve": null,
+      "catchRate": 0.3,
+      "baseExp": 140,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "ember"
+        },
+        {
+          "level": 14,
+          "move": "flame"
+        },
+        {
+          "level": 27,
+          "move": "blast"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "물방울이",
+      "type": "water",
+      "look": "fin",
+      "stage": 1,
+      "color": "#5aa2f0",
+      "belly": "#d6ecff",
+      "baseStats": {
+        "hp": 50,
+        "atk": 46,
+        "def": 52,
+        "spd": 48
+      },
+      "evolve": {
+        "level": 16,
+        "to": 3
+      },
+      "catchRate": 0.5,
+      "baseExp": 60,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "splash"
+        },
+        {
+          "level": 14,
+          "move": "bubble"
+        },
+        {
+          "level": 27,
+          "move": "wave"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "파도리",
+      "type": "water",
+      "look": "fin",
+      "stage": 2,
+      "color": "#3a72d8",
+      "belly": "#c0dcff",
+      "baseStats": {
+        "hp": 75,
+        "atk": 70,
+        "def": 80,
+        "spd": 64
+      },
+      "evolve": null,
+      "catchRate": 0.3,
+      "baseExp": 140,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "splash"
+        },
+        {
+          "level": 14,
+          "move": "bubble"
+        },
+        {
+          "level": 27,
+          "move": "wave"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "새싹이",
+      "type": "grass",
+      "look": "leaf",
+      "stage": 1,
+      "color": "#6cc45a",
+      "belly": "#e6f6b0",
+      "baseStats": {
+        "hp": 48,
+        "atk": 50,
+        "def": 52,
+        "spd": 46
+      },
+      "evolve": {
+        "level": 16,
+        "to": 5
+      },
+      "catchRate": 0.5,
+      "baseExp": 60,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "vine"
+        },
+        {
+          "level": 14,
+          "move": "leaf"
+        },
+        {
+          "level": 27,
+          "move": "solar"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "꽃덩이",
+      "type": "grass",
+      "look": "leaf",
+      "stage": 2,
+      "color": "#4aa848",
+      "belly": "#f6e6a0",
+      "baseStats": {
+        "hp": 72,
+        "atk": 74,
+        "def": 76,
+        "spd": 62
+      },
+      "evolve": null,
+      "catchRate": 0.3,
+      "baseExp": 140,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "vine"
+        },
+        {
+          "level": 14,
+          "move": "leaf"
+        },
+        {
+          "level": 27,
+          "move": "solar"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "찌릿이",
+      "type": "electric",
+      "look": "bolt",
+      "stage": 1,
+      "color": "#a37cf0",
+      "belly": "#efe6ff",
+      "baseStats": {
+        "hp": 38,
+        "atk": 50,
+        "def": 36,
+        "spd": 80
+      },
+      "evolve": {
+        "level": 18,
+        "to": 7
+      },
+      "catchRate": 0.45,
+      "baseExp": 65,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "shock"
+        },
+        {
+          "level": 14,
+          "move": "volt"
+        },
+        {
+          "level": 27,
+          "move": "thunder"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "번쩍이",
+      "type": "electric",
+      "look": "bolt",
+      "stage": 2,
+      "color": "#7c52d8",
+      "belly": "#e6dcff",
+      "baseStats": {
+        "hp": 60,
+        "atk": 84,
+        "def": 56,
+        "spd": 108
+      },
+      "evolve": null,
+      "catchRate": 0.25,
+      "baseExp": 150,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "shock"
+        },
+        {
+          "level": 14,
+          "move": "volt"
+        },
+        {
+          "level": 27,
+          "move": "thunder"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "돌콩이",
+      "type": "rock",
+      "look": "bumps",
+      "stage": 1,
+      "color": "#b0a088",
+      "belly": "#e6dcc8",
+      "baseStats": {
+        "hp": 48,
+        "atk": 58,
+        "def": 70,
+        "spd": 30
+      },
+      "evolve": {
+        "level": 20,
+        "to": 9
+      },
+      "catchRate": 0.5,
+      "baseExp": 62,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "pebble"
+        },
+        {
+          "level": 14,
+          "move": "slide"
+        },
+        {
+          "level": 27,
+          "move": "edge"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "바위곰",
+      "type": "rock",
+      "look": "bumps",
+      "stage": 2,
+      "color": "#8c7c64",
+      "belly": "#d6c8b0",
+      "baseStats": {
+        "hp": 80,
+        "atk": 92,
+        "def": 110,
+        "spd": 44
+      },
+      "evolve": null,
+      "catchRate": 0.3,
+      "baseExp": 150,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "pebble"
+        },
+        {
+          "level": 14,
+          "move": "slide"
+        },
+        {
+          "level": 27,
+          "move": "edge"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "뭉치",
+      "type": "normal",
+      "look": "ears",
+      "stage": 1,
+      "color": "#e6c8a0",
+      "belly": "#fff4e0",
+      "baseStats": {
+        "hp": 55,
+        "atk": 45,
+        "def": 45,
+        "spd": 50
+      },
+      "evolve": {
+        "level": 15,
+        "to": 11
+      },
+      "catchRate": 0.6,
+      "baseExp": 55,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 5,
+          "move": "scratch"
+        },
+        {
+          "level": 18,
+          "move": "rush"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "솜뭉치",
+      "type": "normal",
+      "look": "ears",
+      "stage": 2,
+      "color": "#d0a878",
+      "belly": "#fff0d8",
+      "baseStats": {
+        "hp": 82,
+        "atk": 70,
+        "def": 68,
+        "spd": 70
+      },
+      "evolve": null,
+      "catchRate": 0.35,
+      "baseExp": 130,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 5,
+          "move": "scratch"
+        },
+        {
+          "level": 18,
+          "move": "rush"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "name": "짹짹이",
+      "type": "normal",
+      "look": "wings",
+      "stage": 1,
+      "color": "#c8a080",
+      "belly": "#fbe8d0",
+      "baseStats": {
+        "hp": 40,
+        "atk": 45,
+        "def": 40,
+        "spd": 56
+      },
+      "evolve": {
+        "level": 17,
+        "to": 13
+      },
+      "catchRate": 0.6,
+      "baseExp": 55,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 5,
+          "move": "scratch"
+        },
+        {
+          "level": 18,
+          "move": "rush"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "name": "날쌘새",
+      "type": "normal",
+      "look": "wings",
+      "stage": 2,
+      "color": "#a88068",
+      "belly": "#f4dcc0",
+      "baseStats": {
+        "hp": 65,
+        "atk": 80,
+        "def": 66,
+        "spd": 100
+      },
+      "evolve": null,
+      "catchRate": 0.35,
+      "baseExp": 135,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 5,
+          "move": "scratch"
+        },
+        {
+          "level": 18,
+          "move": "rush"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "name": "뿔불이",
+      "type": "fire",
+      "look": "horn",
+      "stage": 1,
+      "color": "#d8563c",
+      "belly": "#f8c8a0",
+      "baseStats": {
+        "hp": 52,
+        "atk": 64,
+        "def": 54,
+        "spd": 44
+      },
+      "evolve": {
+        "level": 22,
+        "to": 15
+      },
+      "catchRate": 0.4,
+      "baseExp": 75,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "ember"
+        },
+        {
+          "level": 14,
+          "move": "flame"
+        },
+        {
+          "level": 27,
+          "move": "blast"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "name": "화염뿔",
+      "type": "fire",
+      "look": "horn",
+      "stage": 2,
+      "color": "#b83c2c",
+      "belly": "#f0b890",
+      "baseStats": {
+        "hp": 80,
+        "atk": 100,
+        "def": 84,
+        "spd": 62
+      },
+      "evolve": null,
+      "catchRate": 0.25,
+      "baseExp": 160,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "ember"
+        },
+        {
+          "level": 14,
+          "move": "flame"
+        },
+        {
+          "level": 27,
+          "move": "blast"
+        }
+      ]
+    }
+  ]
+}

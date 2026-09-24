@@ -1,0 +1,10 @@
+# 줄바꿈은 LF 로 통일(Windows 의 autocrlf 로 유니티 에셋/소스가 매번 바뀌어 보이는 잡음 방지)
+* text=auto eol=lf
+
+# 바이너리는 변환하지 않는다
+*.png binary
+*.jpg binary
+*.ttf binary
+*.fbx binary
+*.wav binary
+*.ogg binary

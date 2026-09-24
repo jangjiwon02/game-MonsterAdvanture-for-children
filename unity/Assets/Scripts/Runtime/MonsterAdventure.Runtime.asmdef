@@ -1,0 +1,17 @@
+{
+    "name": "MonsterAdventure.Runtime",
+    "rootNamespace": "MonsterAdventure",
+    "references": [
+        "MonsterAdventure.Core",
+        "MonsterAdventure.Net"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
