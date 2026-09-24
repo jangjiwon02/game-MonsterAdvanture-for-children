@@ -12,6 +12,8 @@ namespace MonsterAdventure.Core
     {
         public string Id; public string Name; public string Type;
         public int Power; public int Accuracy;
+        /// <summary>기술 우선도(클수록 먼저). JSON 에 없으면 0 — 지금 데이터의 모든 기술이 0 이다.</summary>
+        public int Priority;
     }
 
     public sealed class BaseStats { public int Hp; public int Atk; public int Def; public int Spd; }
@@ -37,6 +39,9 @@ namespace MonsterAdventure.Core
 
         Dictionary<string, MoveData> _moveById;
 
+        /// <summary>우선도가 0 이 아닌 기술이 하나라도 있는지. false 면 배틀은 기존 턴 순서 코드 경로를 그대로 탄다.</summary>
+        [JsonIgnore] public bool HasPriorityMoves { get; private set; }
+
         public static GameData Parse(string json)
         {
             var data = JsonConvert.DeserializeObject<GameData>(json)
@@ -48,6 +53,7 @@ namespace MonsterAdventure.Core
         void Index()
         {
             _moveById = Moves.ToDictionary(m => m.Id);
+            HasPriorityMoves = Moves.Any(m => m.Priority != 0);
             for (int i = 0; i < Species.Count; i++)
                 if (Species[i].Id != i) throw new InvalidOperationException($"종족 id가 배열 순서와 다르다: [{i}] = {Species[i].Id}");
         }
