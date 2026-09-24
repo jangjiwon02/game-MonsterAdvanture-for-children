@@ -237,7 +237,7 @@ namespace MonsterAdventure
         public IEnumerator SchoolQuizRoutine()
         {
             BeginScene();
-            yield return SchoolQuizScene.Run(Ui, State, Rng, () => System.DateTime.UtcNow, () => SaveStore.Save(State));
+            yield return SchoolQuizScene.Visit(Ui, State, Rng, () => System.DateTime.UtcNow, () => SaveStore.Save(State));
             Player.Teleport(Player.TileX, Player.TileY, Direction.Down);
             EndScene();
         }
@@ -249,17 +249,16 @@ namespace MonsterAdventure
             BeginScene();
             for (;;)
             {
-                var items = new[] { "몬스터", "가방", "박스", "도감", "저장", "명단", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "닫기" };
+                var items = new[] { "몬스터", "가방", "박스", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "닫기" };
                 yield return Ui.Choose(items,
                     new MenuOptions { Rect = new Rect(UiKit.VirtualWidth - 146, 8, 138, items.Length * 26 + 16), Cancel = true });
                 int i = Ui.Choice;
-                if (i == -1 || i == 7) break;
+                if (i == -1 || i == 6) break;
                 if (i == 0) yield return PartyMenu();
                 else if (i == 1) yield return BagMenu();
                 else if (i == 2) yield return BoxMenu();
                 else if (i == 3) yield return Ui.DexScreen(State);
                 else if (i == 4) yield return Ui.Say(SaveStore.Save(State) ? "저장했다!" : "저장에 실패했다...", 500);
-                else if (i == 5) yield return Ui.RosterScreen();
                 else { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
             }
             EndScene();

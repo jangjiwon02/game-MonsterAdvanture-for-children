@@ -6,16 +6,35 @@ using MonsterAdventure.Core;
 namespace MonsterAdventure
 {
     /// <summary>
-    /// 남산초등학교 수학 퀴즈. 문 이벤트가 BeginScene/EndScene 으로 감싸서 <c>yield return SchoolQuizScene.Run(...)</c> 로 부른다.
-    /// 그만두기(X)는 시도로 치지 않는다 — 시도는 정답을 고른 순간에만 기록된다.
+    /// 남산초등학교 방문. 문 이벤트가 BeginScene/EndScene 으로 감싸서 <c>yield return SchoolQuizScene.Visit(...)</c> 로 부른다.
+    /// 들어가면 "수학 퀴즈 / 명단 보기 / 나가기" 메뉴가 뜬다(명단은 월드 메뉴가 아니라 여기서만 본다).
+    /// 퀴즈에서 그만두기(X)는 시도로 치지 않는다 — 시도는 정답을 고른 순간에만 기록된다.
     /// </summary>
     public static class SchoolQuizScene
     {
         /// <param name="now">현재 UTC 시각(보통 <c>() =&gt; DateTime.UtcNow</c>). 시간 주입이 가능하다.</param>
         /// <param name="onChanged">돈·퀴즈 상태가 바뀔 때마다 호출(단일 플레이는 자동저장, LAN 은 계정 동기화).</param>
-        public static IEnumerator Run(GameUi ui, PlayerState state, IRng rng, Func<DateTime> now, Action onChanged)
+        public static IEnumerator Visit(GameUi ui, PlayerState state, IRng rng, Func<DateTime> now, Action onChanged)
         {
-            yield return ui.Say("여기는 남산초등학교!\n수학 퀴즈를 맞히면 용돈을 줄게.");
+            yield return ui.Say("어서 와! 여기는 남산초등학교야.");
+            for (;;)
+            {
+                var items = new[] { "수학 퀴즈", "명단 보기", "나가기" };
+                yield return ui.Choose(items, new MenuOptions
+                {
+                    Rect = new UnityEngine.Rect(UiKit.VirtualWidth - 158, 8, 150, items.Length * 26 + 16), Cancel = true,
+                });
+                int i = ui.Choice;
+                if (i == -1 || i == 2) break;
+                if (i == 0) yield return Attempt(ui, state, rng, now, onChanged);
+                else yield return ui.RosterScreen();
+            }
+            yield return ui.Say("또 놀러 와!");
+        }
+
+        static IEnumerator Attempt(GameUi ui, PlayerState state, IRng rng, Func<DateTime> now, Action onChanged)
+        {
+            yield return ui.Say("수학 퀴즈를 맞히면 용돈을 줄게!");
 
             var status = QuizGate.Check(state, now());
             if (status.Result == QuizGateResult.DailyLimit)
