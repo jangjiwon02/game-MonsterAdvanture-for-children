@@ -18,7 +18,7 @@ namespace MonsterAdventure.Tests
         [Test]
         public void GameData_LoadsAllSpeciesTypesAndMoves()
         {
-            Assert.AreEqual(16, _data.Species.Count);
+            Assert.AreEqual(19, _data.Species.Count);
             Assert.AreEqual(6, _data.Types.Count);
             Assert.AreEqual(18, _data.Moves.Count);
             Assert.AreEqual("불꼬마", _data.GetSpecies(0).Name);
@@ -252,9 +252,9 @@ namespace MonsterAdventure.Tests
                 var near = WildEncounter.Generate(_data, 24, 21, rng);            // 거리 3 (<11)
                 Assert.AreNotEqual(14, near.SpeciesId);
             }
-            // 거리 >= 11 이면 풀이 8종으로 늘어난다: 마지막 항목(뿔불이, id 14)을 굴림 0.99 로 뽑는다.
+            // 거리 >= 11 이면 풀이 11종으로 늘어난다: 마지막 항목(스르릉, id 18)을 굴림 0.99 로 뽑는다.
             var far = WildEncounter.Generate(_data, 44, 18, new ScriptedRng(0.5, 0.99));
-            Assert.AreEqual(14, far.SpeciesId);
+            Assert.AreEqual(18, far.SpeciesId);
         }
 
         [Test]
