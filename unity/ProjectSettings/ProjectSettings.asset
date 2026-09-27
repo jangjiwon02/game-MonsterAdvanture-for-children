@@ -346,43 +346,43 @@ PlayerSettings:
   - m_BuildTarget: Android
     m_Icons:
     - m_Textures:
-      - {fileID: 2800000, guid: 47d4bb48d5c1f844d8cee869fb244573, type: 3}
-      - {fileID: 0}
+      - {fileID: 2800000, guid: 00926db9ac15a8649bc8d14d8b3ba500, type: 3}
+      - {fileID: 2800000, guid: 4bbec16ad3e0b324da49e6564e95d211, type: 3}
       m_Width: 432
       m_Height: 432
       m_Kind: 2
       m_SubKind: 
     - m_Textures:
-      - {fileID: 2800000, guid: 790047d41a456d84fb22a54d3b23a97f, type: 3}
-      - {fileID: 0}
+      - {fileID: 2800000, guid: 825a95bf25a4df14e89e81ef57b7cd5d, type: 3}
+      - {fileID: 2800000, guid: 3ac044ec9e8919945b241997543e5492, type: 3}
       m_Width: 324
       m_Height: 324
       m_Kind: 2
       m_SubKind: 
     - m_Textures:
-      - {fileID: 2800000, guid: 790047d41a456d84fb22a54d3b23a97f, type: 3}
-      - {fileID: 0}
+      - {fileID: 2800000, guid: 155c616e9247d47479ef2c41069e6098, type: 3}
+      - {fileID: 2800000, guid: 3ba321f357a794a4298d876a136bc7cf, type: 3}
       m_Width: 216
       m_Height: 216
       m_Kind: 2
       m_SubKind: 
     - m_Textures:
-      - {fileID: 2800000, guid: bbf19008298dbed44b987ed2bf5d660b, type: 3}
-      - {fileID: 0}
+      - {fileID: 2800000, guid: 68c28a9f2be820545a4646b2a6f258a3, type: 3}
+      - {fileID: 2800000, guid: db44e51288669aa459021351f97bec55, type: 3}
       m_Width: 162
       m_Height: 162
       m_Kind: 2
       m_SubKind: 
     - m_Textures:
-      - {fileID: 2800000, guid: da1fac98c86ee894c8533e73a9c65cdc, type: 3}
-      - {fileID: 0}
+      - {fileID: 2800000, guid: a95160ef5bf28bb4194171dcc72ac39d, type: 3}
+      - {fileID: 2800000, guid: 3bcf42c8807d545469fbb1da74502a72, type: 3}
       m_Width: 108
       m_Height: 108
       m_Kind: 2
       m_SubKind: 
     - m_Textures:
-      - {fileID: 2800000, guid: 7c7c6df2fb57c2f40a04feb29300e56b, type: 3}
-      - {fileID: 0}
+      - {fileID: 2800000, guid: 35e05b432a01ae649909ba46a8221619, type: 3}
+      - {fileID: 2800000, guid: 9af408f74ebb54949a527e3af86a2679, type: 3}
       m_Width: 81
       m_Height: 81
       m_Kind: 2
