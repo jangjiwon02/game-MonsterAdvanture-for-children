@@ -162,6 +162,8 @@ function line(a, b) {
   mk(a, 1, [a.evLv, SP.length + 1]);
   mk(b, 2, null);
 }
+// 진화하지 않는 독립 종족(그 자체로 완결 — 기존 라인보다 조금 더 강하게 잡아 밸런스를 맞춘다).
+function mono(a) { SP.push({ ...a, st: 1, ev: null, id: SP.length }); }
 line({ n: '불꼬마',   t: 'fire',     f: 'flame', c: '#f4743b', c2: '#ffd9a0', b: [45, 52, 43, 62], rate: .5,  xp: 60, evLv: 10 },
      { n: '이글불',   t: 'fire',     f: 'flame', c: '#e4502b', c2: '#ffc27a', b: [68, 82, 64, 82], rate: .3,  xp: 140 });
 line({ n: '물방울이', t: 'water',    f: 'fin',   c: '#5aa2f0', c2: '#d6ecff', b: [50, 46, 52, 48], rate: .5,  xp: 60, evLv: 10 },
@@ -178,6 +180,10 @@ line({ n: '짹짹이',   t: 'normal',   f: 'wings', c: '#c8a080', c2: '#fbe8d0',
      { n: '날쌘새',   t: 'normal',   f: 'wings', c: '#a88068', c2: '#f4dcc0', b: [65, 80, 66, 100], rate: .35, xp: 135 });
 line({ n: '뿔불이',   t: 'fire',     f: 'horn',  c: '#d8563c', c2: '#f8c8a0', b: [52, 64, 54, 44], rate: .4,  xp: 75, evLv: 13 },
      { n: '화염뿔',   t: 'fire',     f: 'horn',  c: '#b83c2c', c2: '#f0b890', b: [80, 100, 84, 62], rate: .25, xp: 160 });
+// 진화 없는 독립 종족 3종(2026-09-27 추가) — 그 자체로 완결이라 기존 base-stage보다 세지만 evolved보다는 약하게.
+mono({ n: '꼬물이', t: 'grass', f: 'worm',  c: '#b5d33e', c2: '#f2f7d9', b: [70, 55, 80, 35], rate: .40, xp: 95 });
+mono({ n: '동글이', t: 'water', f: 'shell', c: '#3fb6c6', c2: '#dff7f5', b: [65, 50, 90, 40], rate: .35, xp: 100 });
+mono({ n: '스르릉', t: 'rock',  f: 'coil',  c: '#8090a8', c2: '#dde5ee', b: [55, 70, 65, 70], rate: .30, xp: 105 });
 SP.forEach(s => { s.learn = LEARN[s.f === 'wings' || s.f === 'ears' ? 'normal' : s.t]; });
 const BASE_IDS = SP.filter(s => s.st === 1).map(s => s.id);
 
@@ -270,6 +276,21 @@ function drawMon(sp, cx, cy, r, o = {}) {
   } else if (f === 'fin' && st2) {
     poly([[-.4 * r, -.7 * r], [-.15 * r, -1.35 * r], [.05 * r, -.85 * r]], '#5a92e8', O);
     poly([[.4 * r, -.7 * r], [.15 * r, -1.35 * r], [-.05 * r, -.85 * r]], '#5a92e8', O);
+  } else if (f === 'worm') {
+    [-1, 1].forEach(s => {
+      c.strokeStyle = shade(C, -0.3); c.lineWidth = r * .05; c.lineCap = 'round'; c.lineJoin = 'round';
+      c.beginPath(); c.moveTo(s * .18 * r, -.85 * r); c.lineTo(s * .42 * r, -1.15 * r); c.lineTo(s * .55 * r, -1.5 * r); c.stroke();
+      ell(s * .55 * r, -1.55 * r, .09 * r, .09 * r, shade(C, 0.25), O);
+    });
+  } else if (f === 'shell') {
+    ell(0, .05 * r, 1.18 * r, .95 * r, shade(C, -0.35), O);
+  } else if (f === 'coil') {
+    const tail = [[.6 * r, .75 * r], [1.15 * r, .55 * r], [1.05 * r, .15 * r], [.75 * r, .05 * r]];
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    c.strokeStyle = O; c.lineWidth = r * .32;
+    c.beginPath(); c.moveTo(tail[0][0], tail[0][1]); tail.slice(1).forEach(p => c.lineTo(p[0], p[1])); c.stroke();
+    c.strokeStyle = C; c.lineWidth = r * .24;
+    c.beginPath(); c.moveTo(tail[0][0], tail[0][1]); tail.slice(1).forEach(p => c.lineTo(p[0], p[1])); c.stroke();
   }
 
   /* 몸 */
@@ -331,6 +352,18 @@ function drawMon(sp, cx, cy, r, o = {}) {
       poly([[s * .55 * r, -.65 * r], [s * .45 * r, -1.5 * r * (st2 ? 1.15 : 1)], [s * .15 * r, -.85 * r]], '#f6ead0', O);
       poly([[s * .5 * r, -.9 * r], [s * .47 * r, -1.2 * r], [s * .3 * r, -.95 * r]], '#d8563c');
     });
+  } else if (f === 'worm') {
+    ell(0, -.95 * r, .22 * r, .12 * r, '#58c84a', O, -0.2);
+  } else if (f === 'shell') {
+    [-1, 0, 1].forEach(k => {
+      c.strokeStyle = shade(C, -0.4); c.lineWidth = r * .045; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(k * .3 * r - .12 * r, .28 * r); c.lineTo(k * .3 * r + .12 * r, .1 * r); c.stroke();
+    });
+    ell(0, -.78 * r, .13 * r, .1 * r, shade(C, -0.3), O);
+  } else if (f === 'coil') {
+    poly([[-.12 * r, -.85 * r], [0, -1.18 * r], [.12 * r, -.85 * r]], shade(C, -0.25), O);
+    poly([[-.28 * r, -.7 * r], [-.36 * r, -.95 * r], [-.16 * r, -.78 * r]], shade(C, -0.2), O);
+    poly([[.28 * r, -.7 * r], [.36 * r, -.95 * r], [.16 * r, -.78 * r]], shade(C, -0.2), O);
   }
 
   /* 얼굴 */
