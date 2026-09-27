@@ -38,6 +38,19 @@ namespace MonsterAdventure
 
         static Color32 C(string hex, float a = 1f) => Painter.Hex(hex, a);
 
+        /// <summary>amt: -1(검게)~+1(희게). 기본색에서 하이라이트/그림자 톤을 만든다(공식 포켓몬 아트의 광택 셰이딩 참고).
+        /// alpha 는 덧칠할 때의 반투명도(1이면 완전 불투명).</summary>
+        static Color32 Shade(Color32 c, float amt, float alpha = 1f)
+        {
+            float t = amt >= 0f ? 1f : 0f;
+            float k = Mathf.Abs(amt);
+            return new Color32(
+                (byte)Mathf.Round(c.r + (t * 255f - c.r) * k),
+                (byte)Mathf.Round(c.g + (t * 255f - c.g) * k),
+                (byte)Mathf.Round(c.b + (t * 255f - c.b) * k),
+                (byte)Mathf.Round(255f * alpha));
+        }
+
         static void Draw(Painter p, SpeciesData sp)
         {
             bool st2 = sp.Stage == 2;
@@ -61,6 +74,16 @@ namespace MonsterAdventure
             void Stroke(Color32 c, float width, params float[] xy)
             {
                 for (int i = 0; i + 3 < xy.Length; i += 2) p.Line(P(xy[i], xy[i + 1]), P(xy[i + 2], xy[i + 3]), width, c);
+            }
+            // 광택 있는 타원: 기본색을 채운 뒤 그 실루엣 안에서만 밝은/어두운 반점을 겹쳐 입체감을 준다(단색 대비 업그레이드).
+            void ShinyEll(float x, float y, float rx, float ry, Color32 fill, Color32? stroke = null)
+            {
+                Ell(x, y, rx, ry, fill, stroke);
+                var center = P(x, y);
+                p.ClipEllipse(center.x, center.y, rx * r, ry * r);
+                Ell(x - rx * 0.32f, y - ry * 0.42f, rx * 0.62f, ry * 0.55f, Shade(fill, 0.55f, 0.30f));
+                Ell(x + rx * 0.38f, y + ry * 0.5f, rx * 0.55f, ry * 0.45f, Shade(fill, -0.5f, 0.20f));
+                p.ClearClip();
             }
 
             string look = sp.Look;
@@ -110,8 +133,10 @@ namespace MonsterAdventure
             /* 몸 */
             Ell(-.45f, .85f, .3f, .16f, body, O);
             Ell(.45f, .85f, .3f, .16f, body, O);
-            Ell(0, 0, 1f, .9f, body, O);
-            Ell(0, .3f, .62f, .5f, belly);
+            ShinyEll(0, 0, 1f, .9f, body, O);
+            ShinyEll(0, .3f, .62f, .5f, belly);
+            // 정수리 광택(부드러운 흰 크레센트) — 공식 아트의 "글로시" 하이라이트 참고
+            Ell(-.18f, -.55f, .28f, .13f, C("#ffffff", .32f), null, -0.3f);
 
             /* 앞쪽 파츠 */
             if (look == "flame")

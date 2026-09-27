@@ -54,6 +54,12 @@ namespace MonsterAdventure
                 (byte)Mathf.Round(outA * 255f));
         }
 
+        Func<float, float, bool> _clip;   // 한 겹만 지원(중첩 안 함) — ClipEllipse/ClearClip 으로 건다/푼다
+
+        /// <summary>이후의 채우기를 타원 안쪽으로만 제한한다(광택 하이라이트가 몸통 밖으로 안 번지게). ClearClip 으로 푼다.</summary>
+        public void ClipEllipse(float cx, float cy, float rx, float ry) => _clip = EllipseTest(cx, cy, Mathf.Abs(rx), Mathf.Abs(ry), 0f);
+        public void ClearClip() => _clip = null;
+
         void Fill(float minX, float minY, float maxX, float maxY, Color32 c, Func<float, float, bool> inside)
         {
             int x0 = Mathf.Max(0, Mathf.FloorToInt(minX)), x1 = Mathf.Min(Width - 1, Mathf.CeilToInt(maxX));
@@ -61,6 +67,7 @@ namespace MonsterAdventure
             for (int y = y0; y <= y1; y++)
                 for (int x = x0; x <= x1; x++)
                 {
+                    if (_clip != null && !_clip(x + 0.5f, y + 0.5f)) continue;
                     int hit = 0;
                     for (int j = 0; j < Sub; j++)
                         for (int i = 0; i < Sub; i++)

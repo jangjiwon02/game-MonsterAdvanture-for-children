@@ -213,6 +213,25 @@ function poly(pts, fill, stroke) {
   c.closePath(); c.fillStyle = fill; c.fill();
   if (stroke) { c.strokeStyle = stroke; c.lineWidth = 2; c.lineJoin = 'round'; c.stroke(); }
 }
+// amt: -1(검게)~+1(희게). 기본색에서 하이라이트/그림자 톤을 만든다(공식 포켓몬 아트의 광택 셰이딩 참고).
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mix = v => Math.round(v + ((amt >= 0 ? 255 : 0) - v) * Math.abs(amt));
+  return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+}
+// 광택 있는 타원: 기본색을 채운 뒤 그 실루엣 안에서만 밝은/어두운 반점을 겹쳐 입체감을 준다(단색 대비 업그레이드).
+function shinyEll(x, y, rx, ry, fill, stroke) {
+  ell(x, y, rx, ry, fill, stroke);
+  c.save();
+  c.beginPath(); c.ellipse(x, y, Math.abs(rx), Math.abs(ry), 0, 0, Math.PI * 2); c.clip();
+  c.globalAlpha = 0.30;
+  ell(x - rx * 0.32, y - ry * 0.42, rx * 0.62, ry * 0.55, shade(fill, 0.55));
+  c.globalAlpha = 0.20;
+  ell(x + rx * 0.38, y + ry * 0.5, rx * 0.55, ry * 0.45, shade(fill, -0.5));
+  c.globalAlpha = 1;
+  c.restore();
+}
 function drawMon(sp, cx, cy, r, o = {}) {
   const st2 = sp.st === 2;
   r *= st2 ? 1.15 : 1;
@@ -256,8 +275,12 @@ function drawMon(sp, cx, cy, r, o = {}) {
   /* 몸 */
   ell(-.45 * r, .85 * r, .3 * r, .16 * r, C, O);
   ell(.45 * r, .85 * r, .3 * r, .16 * r, C, O);
-  ell(0, 0, r, .9 * r, C, O);
-  ell(0, .3 * r, .62 * r, .5 * r, C2);
+  shinyEll(0, 0, r, .9 * r, C, O);
+  shinyEll(0, .3 * r, .62 * r, .5 * r, C2);
+  // 정수리 광택(부드러운 흰 크레센트) — 공식 아트의 "글로시" 하이라이트 참고
+  c.globalAlpha = 0.32;
+  ell(-.18 * r, -.55 * r, .28 * r, .13 * r, '#ffffff', null, -0.3);
+  c.globalAlpha = 1;
 
   /* 앞쪽 파츠 */
   if (f === 'flame') {
