@@ -33,6 +33,11 @@ namespace MonsterAdventure.Core
         /// <summary>오답 후 이 시각(UTC)부터 다시 도전할 수 있다.</summary>
         public DateTime QuizRetryUtc = DateTime.MinValue;
 
+        /// <summary>원격 진행상황 기록(TelemetryClient)에 쓰는, 명단에서 고른 플레이어 이름. 예전 저장엔 없을 수 있다.</summary>
+        public string PlayerName = "";
+        /// <summary>지금까지 실제로 켜 두고 플레이한 총 시간(초). 원격 진행상황 기록용.</summary>
+        public double TotalPlaySeconds;
+
         public static PlayerState NewGame(GameData data, int starterSpeciesId)
         {
             var s = new PlayerState();

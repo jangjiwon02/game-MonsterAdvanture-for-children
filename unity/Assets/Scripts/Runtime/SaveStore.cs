@@ -21,6 +21,10 @@ namespace MonsterAdventure
                 File.WriteAllText(tmp, SaveSerializer.ToJson(state));
                 if (File.Exists(FilePath)) File.Delete(FilePath);
                 File.Move(tmp, FilePath);
+                // 저장이 일어나는 모든 지점(센터·상점·퀴즈·포획 등)에서 자연스럽게 진행상황을 같이 보낸다.
+                TelemetryClient.SendProgress(state.PlayerName,
+                    state.Party.Count > 0 ? state.Party[0].Level : 0,
+                    state.Dex.Count, state.Money, state.TotalPlaySeconds);
                 return true;
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)

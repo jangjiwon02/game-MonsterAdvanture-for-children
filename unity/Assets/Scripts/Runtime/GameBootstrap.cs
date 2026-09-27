@@ -1,4 +1,6 @@
+using System;
 using System.Collections;
+using System.Collections.Generic;
 using MonsterAdventure.Core;
 using UnityEngine;
 using static MonsterAdventure.Core.Korean;
@@ -49,6 +51,8 @@ namespace MonsterAdventure
         /// <summary>타이틀에서 시작 상태를 정한 뒤 월드를 세운다(웹의 startWorld: 검게 → 월드 → 밝게).</summary>
         IEnumerator Boot()
         {
+            TelemetryClient.SendInstallIfFirstRun();
+
             if (skipTitle)
             {
                 var loaded = SaveStore.TryLoad(Data);
@@ -58,7 +62,9 @@ namespace MonsterAdventure
                     State = PlayerState.NewGame(Data, starterSpeciesId);
                     State.Party[0].RollIndividualValues(Data);   // 새 파트너만 개체값을 굴린다(불러오기는 그대로)
                 }
+                yield return EnsurePlayerName();
                 BuildWorld();
+                BeginSession();
                 yield break;
             }
 
@@ -74,9 +80,53 @@ namespace MonsterAdventure
                 yield break;
             }
             State = title.Result;
+            yield return EnsurePlayerName();
             BuildWorld();
+            BeginSession();
             yield return GameUi.Tween(.3f, p => Ui.Fade = 1f - p);
         }
+
+        /// <summary>원격 진행상황 기록용 이름이 아직 없으면(예전 저장이거나 첫 실행) 명단에서 골라서 저장에 남긴다.</summary>
+        IEnumerator EnsurePlayerName()
+        {
+            if (!string.IsNullOrEmpty(State.PlayerName)) yield break;
+
+            var names = new List<string> { Roster.Teacher };
+            names.AddRange(Roster.Students);
+            yield return Ui.Say("진행상황 기록을 위해 명단에서 이름을 골라 주세요.");
+            yield return Ui.Choose(names, new MenuOptions
+            {
+                Rect = new Rect(UiKit.VirtualWidth / 2f - 140, 70, 280, 6 * 26 + 16),
+                Cols = 2, Full = true, Prompt = "누구인가요?",
+            });
+            State.PlayerName = names[Mathf.Max(0, Ui.Choice)];
+            SaveStore.Save(State);
+        }
+
+        DateTime _sessionStartUtc;
+
+        void BeginSession()
+        {
+            _sessionStartUtc = DateTime.UtcNow;
+            TelemetryClient.SendSessionStart(State.PlayerName);
+        }
+
+        void EndSession()
+        {
+            if (State == null) return;
+            double elapsed = (DateTime.UtcNow - _sessionStartUtc).TotalSeconds;
+            if (elapsed <= 0) return;
+            State.TotalPlaySeconds += elapsed;
+            SaveStore.Save(State);
+            TelemetryClient.SendSessionEnd(State.PlayerName, elapsed, State.TotalPlaySeconds);
+        }
+
+        void OnApplicationPause(bool paused)
+        {
+            if (paused) EndSession(); else BeginSession();
+        }
+
+        void OnApplicationQuit() => EndSession();
 
         void BuildWorld()
         {
