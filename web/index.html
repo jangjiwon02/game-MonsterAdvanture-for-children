@@ -251,6 +251,18 @@ const BODY_SHAPE = {
 };
 // 옆으로 긴 몸통(물고기·뱀)은 눈코입도 앞쪽으로 당겨줘야 자연스럽다. look(f) 기준으로 건다.
 const FACE_OFFSET = { fin: [-.22, -.02], shell: [-.22, -.02], coil: [-.15, -.05] };
+// 세부 디자인(발톱·이빨·눈동자 모양)을 archetype별로 켤지 결정하는 플래그.
+const FIERCE = { dinosaur: 1, dragon: 1, wolf: 1, tiger: 1, snake: 1 };   // 이빨(송곳니)
+const SLIT_EYE = { dragon: 1, tiger: 1, snake: 1 };                       // 세로 슬릿 눈동자
+
+/// <summary>발 위치(fx,fy, 이미 *r)에 작은 발톱 3개를 그린다. fw: 발 폭 대략치(이미 *r).</summary>
+function claws(fx, fy, fw) {
+  const cl = 'rgba(25,25,25,.85)';
+  [-1, 0, 1].forEach(i => {
+    const dx = i * fw * .4;
+    poly([[fx + dx - fw * .1, fy + fw * .1], [fx + dx + fw * .1, fy + fw * .1], [fx + dx, fy + fw * .42]], cl);
+  });
+}
 
 /// <summary>몸통·다리·꼬리·날개 등 archetype별 실루엣. 종족별 부착물(look)은 이 위/아래에 그대로 얹힌다.</summary>
 function drawBody(shape, r, C, C2, O) {
@@ -260,12 +272,14 @@ function drawBody(shape, r, C, C2, O) {
     ell(.42 * r, .92 * r, .24 * r, .2 * r, C, O);
     ell(-.68 * r, .62 * r, .13 * r, .2 * r, C, O);
     ell(.68 * r, .62 * r, .13 * r, .2 * r, C, O);
+    claws(-.42 * r, .92 * r, .24 * r); claws(.42 * r, .92 * r, .24 * r);
     shinyEll(0, -.02 * r, .78 * r, .85 * r, C, O);
     shinyEll(0, .32 * r, .5 * r, .46 * r, C2);
   } else if (shape === 'dragon') {
     poly([[.55 * r, .3 * r], [1.35 * r, .1 * r], [1.05 * r, .55 * r], [.65 * r, .55 * r]], C, O);
     ell(-.4 * r, .88 * r, .26 * r, .17 * r, C, O);
     ell(.4 * r, .88 * r, .26 * r, .17 * r, C, O);
+    claws(-.4 * r, .88 * r, .26 * r); claws(.4 * r, .88 * r, .26 * r);
     shinyEll(0, 0, .85 * r, .8 * r, C, O);
     shinyEll(0, .25 * r, .55 * r, .42 * r, C2);
   } else if (shape === 'fish') {
@@ -288,6 +302,8 @@ function drawBody(shape, r, C, C2, O) {
     ell(.55 * r, .95 * r, stocky ? .17 * r : .14 * r, .22 * r, C, O);
     ell(-.32 * r, .8 * r, .12 * r, .2 * r, C, O);
     ell(.32 * r, .8 * r, .12 * r, .2 * r, C, O);
+    claws(-.55 * r, .95 * r, stocky ? .17 * r : .14 * r); claws(.55 * r, .95 * r, stocky ? .17 * r : .14 * r);
+    claws(-.32 * r, .8 * r, .12 * r); claws(.32 * r, .8 * r, .12 * r);
     shinyEll(0, -.02 * r, stocky ? .78 * r : .7 * r, stocky ? .82 * r : .78 * r, C, O);
     shinyEll(0, .28 * r, .5 * r, .42 * r, C2);
     ell(0, .05 * r, .16 * r, .12 * r, shade(C, -.15), O);
@@ -327,7 +343,12 @@ function drawMon(sp, cx, cy, r, o = {}) {
     const fl = Math.sin(t / 150) * .15;
     [-1, 1].forEach(s => {
       c.save(); c.translate(s * .9 * r, .05 * r); c.rotate(s * (.35 + fl));
-      ell(0, 0, .3 * r * (st2 ? 1.3 : 1), .6 * r * (st2 ? 1.25 : 1), C2, O); c.restore();
+      const wr = .3 * r * (st2 ? 1.3 : 1), wl = .6 * r * (st2 ? 1.25 : 1);
+      ell(0, 0, wr, wl, C2, O);
+      // 깃털 결(층이 진 타원을 겹쳐서 깃털 줄무늬처럼 보이게)
+      ell(0, 0, wr * .68, wl * .78, shade(C2, -0.18));
+      ell(0, 0, wr * .4, wl * .5, shade(C2, -0.3));
+      c.restore();
     });
   } else if (f === 'leaf' && st2) {
     for (let i = 0; i < 6; i++) {
@@ -418,17 +439,26 @@ function drawMon(sp, cx, cy, r, o = {}) {
   }
 
   /* 얼굴 — 옆으로 긴 몸통(물고기·뱀)은 앞쪽으로 당겨서 자연스럽게 */
+  const shapeName = BODY_SHAPE[f] || 'round';
   const [fdx, fdy] = FACE_OFFSET[f] || [0, 0];
   c.save(); c.translate(fdx * r, fdy * r);
   ell(-.36 * r, -.16 * r, .17 * r, .21 * r, '#fff', O);
   ell(.36 * r, -.16 * r, .17 * r, .21 * r, '#fff', O);
-  ell(-.34 * r, -.13 * r, .09 * r, .12 * r, '#151515');
-  ell(.34 * r, -.13 * r, .09 * r, .12 * r, '#151515');
+  // 눈동자: 맹수·파충류 계열(용/호랑이/뱀)은 세로 슬릿, 나머지는 동그란 눈동자.
+  const [prx, pry] = SLIT_EYE[shapeName] ? [.035, .16] : [.09, .12];
+  ell(-.34 * r, -.13 * r, prx * r, pry * r, '#151515');
+  ell(.34 * r, -.13 * r, prx * r, pry * r, '#151515');
   ell(-.31 * r, -.18 * r, .035 * r, .035 * r, '#fff');
   ell(.37 * r, -.18 * r, .035 * r, .035 * r, '#fff');
   if (f !== 'wings') {
     c.strokeStyle = '#222'; c.lineWidth = 2; c.lineCap = 'round';
     c.beginPath(); c.arc(0, .12 * r, .16 * r, .15 * Math.PI, .85 * Math.PI); c.stroke();
+  }
+  if (FIERCE[shapeName] && f !== 'wings') {
+    // 송곳니: 입 양 끝(위 arc의 대략 양끝 좌표)에서 아래로 뾰족하게. 부리(wings)는 이빨이 안 어울려서 제외.
+    [[.142, .193], [-.142, .193]].forEach(([tx, ty]) => {
+      poly([[tx * r - .045 * r, ty * r - .02 * r], [tx * r + .045 * r, ty * r - .02 * r], [tx * r, ty * r + .12 * r]], '#fdfdf6', 'rgba(0,0,0,.4)');
+    });
   }
   if (st2) {
     c.strokeStyle = '#222'; c.lineWidth = 3; c.lineCap = 'round';

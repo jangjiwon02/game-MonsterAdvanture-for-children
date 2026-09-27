@@ -34,6 +34,9 @@ namespace MonsterAdventure
             {"shell", new Vector2(-.22f, -.02f)},
             {"coil", new Vector2(-.15f, -.05f)},
         };
+        // 세부 디자인(발톱·이빨·눈동자 모양)을 archetype별로 켤지 결정하는 플래그.
+        static readonly HashSet<string> Fierce = new HashSet<string> { "dinosaur", "dragon", "wolf", "tiger", "snake" };   // 송곳니
+        static readonly HashSet<string> SlitEye = new HashSet<string> { "dragon", "tiger", "snake" };                     // 세로 슬릿 눈동자
 
         public static Texture2D Get(SpeciesData sp)
         {
@@ -103,6 +106,16 @@ namespace MonsterAdventure
                 Ell(x + rx * 0.38f, y + ry * 0.5f, rx * 0.55f, ry * 0.45f, Shade(fill, -0.5f, 0.20f));
                 p.ClearClip();
             }
+            // 발 위치(fx,fy)에 작은 발톱 3개를 그린다. fw: 발 폭 대략치(전부 r-unit).
+            void Claws(float fx, float fy, float fw)
+            {
+                var cl = new Color32(25, 25, 25, 217);
+                foreach (int i in new[] { -1, 0, 1 })
+                {
+                    float dx = i * fw * .4f;
+                    Poly(cl, null, fx + dx - fw * .1f, fy + fw * .1f, fx + dx + fw * .1f, fy + fw * .1f, fx + dx, fy + fw * .42f);
+                }
+            }
 
             /// <summary>몸통·다리·꼬리·날개 등 archetype별 실루엣. 종족별 부착물(look)은 이 위/아래에 그대로 얹힌다.</summary>
             void DrawBody(string shape)
@@ -114,6 +127,7 @@ namespace MonsterAdventure
                     Ell(.42f, .92f, .24f, .2f, body, O);
                     Ell(-.68f, .62f, .13f, .2f, body, O);
                     Ell(.68f, .62f, .13f, .2f, body, O);
+                    Claws(-.42f, .92f, .24f); Claws(.42f, .92f, .24f);
                     ShinyEll(0, -.02f, .78f, .85f, body, O);
                     ShinyEll(0, .32f, .5f, .46f, belly);
                 }
@@ -122,6 +136,7 @@ namespace MonsterAdventure
                     Poly(body, O, .55f, .3f, 1.35f, .1f, 1.05f, .55f, .65f, .55f);
                     Ell(-.4f, .88f, .26f, .17f, body, O);
                     Ell(.4f, .88f, .26f, .17f, body, O);
+                    Claws(-.4f, .88f, .26f); Claws(.4f, .88f, .26f);
                     ShinyEll(0, 0, .85f, .8f, body, O);
                     ShinyEll(0, .25f, .55f, .42f, belly);
                 }
@@ -150,6 +165,8 @@ namespace MonsterAdventure
                     Ell(.55f, .95f, stocky ? .17f : .14f, .22f, body, O);
                     Ell(-.32f, .8f, .12f, .2f, body, O);
                     Ell(.32f, .8f, .12f, .2f, body, O);
+                    Claws(-.55f, .95f, stocky ? .17f : .14f); Claws(.55f, .95f, stocky ? .17f : .14f);
+                    Claws(-.32f, .8f, .12f); Claws(.32f, .8f, .12f);
                     ShinyEll(0, -.02f, stocky ? .78f : .7f, stocky ? .82f : .78f, body, O);
                     ShinyEll(0, .28f, .5f, .42f, belly);
                     Ell(0, .05f, .16f, .12f, Shade(body, -.15f), O);
@@ -189,7 +206,14 @@ namespace MonsterAdventure
             else if (look == "wings")
             {
                 foreach (int s in new[] { -1, 1 })
-                    Ell(s * .9f, .05f, .3f * (st2 ? 1.3f : 1f), .6f * (st2 ? 1.25f : 1f), belly, O, s * .35f);
+                {
+                    float wr = .3f * (st2 ? 1.3f : 1f), wl = .6f * (st2 ? 1.25f : 1f);
+                    float rot = s * .35f;
+                    Ell(s * .9f, .05f, wr, wl, belly, O, rot);
+                    // 깃털 결(층이 진 타원을 겹쳐서 깃털 줄무늬처럼 보이게)
+                    Ell(s * .9f, .05f, wr * .68f, wl * .78f, Shade(belly, -0.18f), null, rot);
+                    Ell(s * .9f, .05f, wr * .4f, wl * .5f, Shade(belly, -0.3f), null, rot);
+                }
             }
             else if (look == "leaf" && st2)
             {
@@ -313,11 +337,15 @@ namespace MonsterAdventure
             /* 얼굴 — 옆으로 긴 몸통(물고기·뱀)은 앞쪽으로 당겨서 자연스럽게 */
             var faceOff = FaceOffset.TryGetValue(look, out var fo) ? fo : Vector2.zero;
             cx += faceOff.x * r; cy += faceOff.y * r;
+            string shapeName = BodyShape.TryGetValue(look, out var sn) ? sn : "round";
 
             Ell(-.36f, -.16f, .17f, .21f, C("#ffffff"), O);
             Ell(.36f, -.16f, .17f, .21f, C("#ffffff"), O);
-            Ell(-.34f, -.13f, .09f, .12f, C("#151515"));
-            Ell(.34f, -.13f, .09f, .12f, C("#151515"));
+            // 눈동자: 맹수·파충류 계열(용/호랑이/뱀)은 세로 슬릿, 나머지는 동그란 눈동자.
+            float prx = SlitEye.Contains(shapeName) ? .035f : .09f;
+            float pry = SlitEye.Contains(shapeName) ? .16f : .12f;
+            Ell(-.34f, -.13f, prx, pry, C("#151515"));
+            Ell(.34f, -.13f, prx, pry, C("#151515"));
             Ell(-.31f, -.18f, .035f, .035f, C("#ffffff"));
             Ell(.37f, -.18f, .035f, .035f, C("#ffffff"));
             if (look != "wings")
@@ -330,6 +358,12 @@ namespace MonsterAdventure
                     mouth.Add(Mathf.Cos(a) * .16f); mouth.Add(.12f + Mathf.Sin(a) * .16f);
                 }
                 Stroke(C("#222222"), 2f, mouth.ToArray());
+            }
+            if (Fierce.Contains(shapeName) && look != "wings")
+            {
+                // 송곳니: 입 양 끝에서 아래로 뾰족하게. 부리(wings)는 이빨이 안 어울려서 제외.
+                foreach (float tx in new[] { .142f, -.142f })
+                    Poly(C("#fdfdf6"), C("#000000", .4f), tx - .045f, .173f, tx + .045f, .173f, tx, .313f);
             }
             if (st2)
             {
