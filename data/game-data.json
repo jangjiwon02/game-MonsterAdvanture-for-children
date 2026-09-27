@@ -210,7 +210,7 @@
         "spd": 62
       },
       "evolve": {
-        "level": 16,
+        "level": 10,
         "to": 1
       },
       "catchRate": 0.5,
@@ -285,7 +285,7 @@
         "spd": 48
       },
       "evolve": {
-        "level": 16,
+        "level": 10,
         "to": 3
       },
       "catchRate": 0.5,
@@ -360,7 +360,7 @@
         "spd": 46
       },
       "evolve": {
-        "level": 16,
+        "level": 10,
         "to": 5
       },
       "catchRate": 0.5,
@@ -435,7 +435,7 @@
         "spd": 80
       },
       "evolve": {
-        "level": 18,
+        "level": 11,
         "to": 7
       },
       "catchRate": 0.45,
@@ -510,7 +510,7 @@
         "spd": 30
       },
       "evolve": {
-        "level": 20,
+        "level": 12,
         "to": 9
       },
       "catchRate": 0.5,
@@ -585,7 +585,7 @@
         "spd": 50
       },
       "evolve": {
-        "level": 15,
+        "level": 9,
         "to": 11
       },
       "catchRate": 0.6,
@@ -652,7 +652,7 @@
         "spd": 56
       },
       "evolve": {
-        "level": 17,
+        "level": 10,
         "to": 13
       },
       "catchRate": 0.6,
@@ -719,7 +719,7 @@
         "spd": 44
       },
       "evolve": {
-        "level": 22,
+        "level": 13,
         "to": 15
       },
       "catchRate": 0.4,

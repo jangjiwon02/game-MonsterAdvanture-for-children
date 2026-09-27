@@ -162,21 +162,21 @@ function line(a, b) {
   mk(a, 1, [a.evLv, SP.length + 1]);
   mk(b, 2, null);
 }
-line({ n: '불꼬마',   t: 'fire',     f: 'flame', c: '#f4743b', c2: '#ffd9a0', b: [45, 52, 43, 62], rate: .5,  xp: 60, evLv: 16 },
+line({ n: '불꼬마',   t: 'fire',     f: 'flame', c: '#f4743b', c2: '#ffd9a0', b: [45, 52, 43, 62], rate: .5,  xp: 60, evLv: 10 },
      { n: '이글불',   t: 'fire',     f: 'flame', c: '#e4502b', c2: '#ffc27a', b: [68, 82, 64, 82], rate: .3,  xp: 140 });
-line({ n: '물방울이', t: 'water',    f: 'fin',   c: '#5aa2f0', c2: '#d6ecff', b: [50, 46, 52, 48], rate: .5,  xp: 60, evLv: 16 },
+line({ n: '물방울이', t: 'water',    f: 'fin',   c: '#5aa2f0', c2: '#d6ecff', b: [50, 46, 52, 48], rate: .5,  xp: 60, evLv: 10 },
      { n: '파도리',   t: 'water',    f: 'fin',   c: '#3a72d8', c2: '#c0dcff', b: [75, 70, 80, 64], rate: .3,  xp: 140 });
-line({ n: '새싹이',   t: 'grass',    f: 'leaf',  c: '#6cc45a', c2: '#e6f6b0', b: [48, 50, 52, 46], rate: .5,  xp: 60, evLv: 16 },
+line({ n: '새싹이',   t: 'grass',    f: 'leaf',  c: '#6cc45a', c2: '#e6f6b0', b: [48, 50, 52, 46], rate: .5,  xp: 60, evLv: 10 },
      { n: '꽃덩이',   t: 'grass',    f: 'leaf',  c: '#4aa848', c2: '#f6e6a0', b: [72, 74, 76, 62], rate: .3,  xp: 140 });
-line({ n: '찌릿이',   t: 'electric', f: 'bolt',  c: '#a37cf0', c2: '#efe6ff', b: [38, 50, 36, 80], rate: .45, xp: 65, evLv: 18 },
+line({ n: '찌릿이',   t: 'electric', f: 'bolt',  c: '#a37cf0', c2: '#efe6ff', b: [38, 50, 36, 80], rate: .45, xp: 65, evLv: 11 },
      { n: '번쩍이',   t: 'electric', f: 'bolt',  c: '#7c52d8', c2: '#e6dcff', b: [60, 84, 56, 108], rate: .25, xp: 150 });
-line({ n: '돌콩이',   t: 'rock',     f: 'bumps', c: '#b0a088', c2: '#e6dcc8', b: [48, 58, 70, 30], rate: .5,  xp: 62, evLv: 20 },
+line({ n: '돌콩이',   t: 'rock',     f: 'bumps', c: '#b0a088', c2: '#e6dcc8', b: [48, 58, 70, 30], rate: .5,  xp: 62, evLv: 12 },
      { n: '바위곰',   t: 'rock',     f: 'bumps', c: '#8c7c64', c2: '#d6c8b0', b: [80, 92, 110, 44], rate: .3, xp: 150 });
-line({ n: '뭉치',     t: 'normal',   f: 'ears',  c: '#e6c8a0', c2: '#fff4e0', b: [55, 45, 45, 50], rate: .6,  xp: 55, evLv: 15 },
+line({ n: '뭉치',     t: 'normal',   f: 'ears',  c: '#e6c8a0', c2: '#fff4e0', b: [55, 45, 45, 50], rate: .6,  xp: 55, evLv: 9 },
      { n: '솜뭉치',   t: 'normal',   f: 'ears',  c: '#d0a878', c2: '#fff0d8', b: [82, 70, 68, 70], rate: .35, xp: 130 });
-line({ n: '짹짹이',   t: 'normal',   f: 'wings', c: '#c8a080', c2: '#fbe8d0', b: [40, 45, 40, 56], rate: .6,  xp: 55, evLv: 17 },
+line({ n: '짹짹이',   t: 'normal',   f: 'wings', c: '#c8a080', c2: '#fbe8d0', b: [40, 45, 40, 56], rate: .6,  xp: 55, evLv: 10 },
      { n: '날쌘새',   t: 'normal',   f: 'wings', c: '#a88068', c2: '#f4dcc0', b: [65, 80, 66, 100], rate: .35, xp: 135 });
-line({ n: '뿔불이',   t: 'fire',     f: 'horn',  c: '#d8563c', c2: '#f8c8a0', b: [52, 64, 54, 44], rate: .4,  xp: 75, evLv: 22 },
+line({ n: '뿔불이',   t: 'fire',     f: 'horn',  c: '#d8563c', c2: '#f8c8a0', b: [52, 64, 54, 44], rate: .4,  xp: 75, evLv: 13 },
      { n: '화염뿔',   t: 'fire',     f: 'horn',  c: '#b83c2c', c2: '#f0b890', b: [80, 100, 84, 62], rate: .25, xp: 160 });
 SP.forEach(s => { s.learn = LEARN[s.f === 'wings' || s.f === 'ears' ? 'normal' : s.t]; });
 const BASE_IDS = SP.filter(s => s.st === 1).map(s => s.id);
