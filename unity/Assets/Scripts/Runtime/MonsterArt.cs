@@ -17,6 +17,24 @@ namespace MonsterAdventure
 
         static readonly Dictionary<int, Texture2D> Cache = new Dictionary<int, Texture2D>();
 
+        // 종족별 룩(look) → 몸통 실루엣 archetype. 기존엔 전부 동그란 몸통 하나였는데,
+        // 뱀/용/물고기/나비/공룡/호랑이/늑대 7가지로 나눠서 실루엣 자체가 다르게 보이게 한다.
+        static readonly Dictionary<string, string> BodyShape = new Dictionary<string, string> {
+            {"flame","dinosaur"}, {"bumps","dinosaur"},
+            {"horn","dragon"}, {"wings","dragon"},
+            {"fin","fish"}, {"shell","fish"},
+            {"leaf","butterfly"}, {"worm","butterfly"},
+            {"bolt","wolf"},
+            {"ears","tiger"},
+            {"coil","snake"},
+        };
+        // 옆으로 긴 몸통(물고기·뱀)은 눈코입도 앞쪽으로 당겨줘야 자연스럽다. look 기준으로 건다.
+        static readonly Dictionary<string, Vector2> FaceOffset = new Dictionary<string, Vector2> {
+            {"fin", new Vector2(-.22f, -.02f)},
+            {"shell", new Vector2(-.22f, -.02f)},
+            {"coil", new Vector2(-.15f, -.05f)},
+        };
+
         public static Texture2D Get(SpeciesData sp)
         {
             if (Cache.TryGetValue(sp.Id, out var tex) && tex != null) return tex;
@@ -86,6 +104,72 @@ namespace MonsterAdventure
                 p.ClearClip();
             }
 
+            /// <summary>몸통·다리·꼬리·날개 등 archetype별 실루엣. 종족별 부착물(look)은 이 위/아래에 그대로 얹힌다.</summary>
+            void DrawBody(string shape)
+            {
+                if (shape == "dinosaur")
+                {
+                    Poly(body, O, .5f, .5f, 1.25f, .7f, .68f, .95f);
+                    Ell(-.42f, .92f, .24f, .2f, body, O);
+                    Ell(.42f, .92f, .24f, .2f, body, O);
+                    Ell(-.68f, .62f, .13f, .2f, body, O);
+                    Ell(.68f, .62f, .13f, .2f, body, O);
+                    ShinyEll(0, -.02f, .78f, .85f, body, O);
+                    ShinyEll(0, .32f, .5f, .46f, belly);
+                }
+                else if (shape == "dragon")
+                {
+                    Poly(body, O, .55f, .3f, 1.35f, .1f, 1.05f, .55f, .65f, .55f);
+                    Ell(-.4f, .88f, .26f, .17f, body, O);
+                    Ell(.4f, .88f, .26f, .17f, body, O);
+                    ShinyEll(0, 0, .85f, .8f, body, O);
+                    ShinyEll(0, .25f, .55f, .42f, belly);
+                }
+                else if (shape == "fish")
+                {
+                    Poly(body, O, .8f, -.2f, 1.4f, -.4f, 1.15f, 0f, 1.4f, .4f, .8f, .2f);
+                    ShinyEll(-.05f, 0, .95f, .6f, body, O);
+                    ShinyEll(-.05f, .18f, .58f, .3f, belly);
+                }
+                else if (shape == "butterfly")
+                {
+                    var wing = new Color32(belly.r, belly.g, belly.b, 217); // JS globalAlpha=.85 대응
+                    foreach (int s in new[] { -1, 1 })
+                    {
+                        Poly(wing, O, s * .2f, -.5f, s * 1.15f, -.9f, s * .95f, -.15f, s * .25f, -.05f);
+                        Poly(wing, O, s * .2f, .05f, s * .95f, .25f, s * .7f, .65f, s * .2f, .5f);
+                    }
+                    ShinyEll(0, .05f, .34f, .78f, body, O);
+                    ShinyEll(0, .3f, .2f, .4f, belly);
+                }
+                else if (shape == "wolf" || shape == "tiger")
+                {
+                    bool stocky = shape == "tiger";
+                    Poly(body, O, -.6f, .3f, -1.2f, .1f * (stocky ? 1f : 1.3f), -.65f, .55f);
+                    Ell(-.55f, .95f, stocky ? .17f : .14f, .22f, body, O);
+                    Ell(.55f, .95f, stocky ? .17f : .14f, .22f, body, O);
+                    Ell(-.32f, .8f, .12f, .2f, body, O);
+                    Ell(.32f, .8f, .12f, .2f, body, O);
+                    ShinyEll(0, -.02f, stocky ? .78f : .7f, stocky ? .82f : .78f, body, O);
+                    ShinyEll(0, .28f, .5f, .42f, belly);
+                    Ell(0, .05f, .16f, .12f, Shade(body, -.15f), O);
+                }
+                else if (shape == "snake")
+                {
+                    Poly(body, O, .7f, .32f, 1.35f, .18f, .85f, -.05f);
+                    ShinyEll(0, 0, .92f, .55f, body, O);
+                    ShinyEll(0, .2f, .62f, .28f, belly);
+                }
+                else
+                {
+                    Ell(-.45f, .85f, .3f, .16f, body, O);
+                    Ell(.45f, .85f, .3f, .16f, body, O);
+                    ShinyEll(0, 0, 1f, .9f, body, O);
+                    ShinyEll(0, .3f, .62f, .5f, belly);
+                }
+                Ell(-.18f, -.55f, .28f, .13f, C("#ffffff", .32f), null, -0.3f);
+            }
+
             string look = sp.Look;
 
             /* 뒤쪽 파츠 */
@@ -129,14 +213,17 @@ namespace MonsterAdventure
                 Poly(C("#5a92e8"), O, -.4f, -.7f, -.15f, -1.35f, .05f, -.85f);
                 Poly(C("#5a92e8"), O, .4f, -.7f, .15f, -1.35f, -.05f, -.85f);
             }
+            else if (look == "worm")
+            {
+                foreach (int s in new[] { -1, 1 })
+                {
+                    Stroke(Shade(body, -0.3f), r * .05f, s * .18f, -.85f, s * .42f, -1.15f, s * .55f, -1.5f);
+                    Ell(s * .55f, -1.55f, .09f, .09f, Shade(body, 0.25f));
+                }
+            }
 
-            /* 몸 */
-            Ell(-.45f, .85f, .3f, .16f, body, O);
-            Ell(.45f, .85f, .3f, .16f, body, O);
-            ShinyEll(0, 0, 1f, .9f, body, O);
-            ShinyEll(0, .3f, .62f, .5f, belly);
-            // 정수리 광택(부드러운 흰 크레센트) — 공식 아트의 "글로시" 하이라이트 참고
-            Ell(-.18f, -.55f, .28f, .13f, C("#ffffff", .32f), null, -0.3f);
+            /* 몸 — 종족별 archetype 실루엣(뱀/용/물고기/나비/공룡/호랑이/늑대) */
+            DrawBody(BodyShape.TryGetValue(look, out var bodyShapeName) ? bodyShapeName : "round");
 
             /* 앞쪽 파츠 */
             if (look == "flame")
@@ -206,8 +293,27 @@ namespace MonsterAdventure
                     Poly(C("#d8563c"), null, s * .5f, -.9f, s * .47f, -1.2f, s * .3f, -.95f);
                 }
             }
+            else if (look == "worm")
+            {
+                Ell(0, -.95f, .22f, .12f, C("#58c84a"), O, -0.2f);
+            }
+            else if (look == "shell")
+            {
+                foreach (int k in new[] { -1, 0, 1 })
+                    Stroke(Shade(body, -0.4f), r * .045f, k * .3f - .12f, .28f, k * .3f + .12f, .1f);
+                Ell(0, -.78f, .13f, .1f, Shade(body, -0.3f), O);
+            }
+            else if (look == "coil")
+            {
+                Poly(Shade(body, -0.25f), O, -.12f, -.85f, 0f, -1.18f, .12f, -.85f);
+                Poly(Shade(body, -0.2f), O, -.28f, -.7f, -.36f, -.95f, -.16f, -.78f);
+                Poly(Shade(body, -0.2f), O, .28f, -.7f, .36f, -.95f, .16f, -.78f);
+            }
 
-            /* 얼굴 */
+            /* 얼굴 — 옆으로 긴 몸통(물고기·뱀)은 앞쪽으로 당겨서 자연스럽게 */
+            var faceOff = FaceOffset.TryGetValue(look, out var fo) ? fo : Vector2.zero;
+            cx += faceOff.x * r; cy += faceOff.y * r;
+
             Ell(-.36f, -.16f, .17f, .21f, C("#ffffff"), O);
             Ell(.36f, -.16f, .17f, .21f, C("#ffffff"), O);
             Ell(-.34f, -.13f, .09f, .12f, C("#151515"));

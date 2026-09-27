@@ -228,7 +228,7 @@ namespace MonsterAdventure
             UiKit.Text("X: 뒤로", UiKit.VirtualWidth - 12, UiKit.VirtualHeight - 26, 11, UiKit.C("#9aa2d0"), TextAnchor.UpperRight);
         }
 
-        /// <summary>몬스터 도감: 종족 16종 목록(잡은 것만 이름이 보이고, 못 잡은 건 "???") → 하나 고르면
+        /// <summary>몬스터 도감: 종족 19종 목록(잡은 것만 이름이 보이고, 못 잡은 건 "???") → 하나 고르면
         /// 종류·진화·레벨별로 배우는 기술 전체를 보여준다(개체별 현재 상태가 아니라 종족 자체의 참고 자료).
         /// 싱글플레이·LAN 양쪽 월드 메뉴가 그대로 같이 쓴다(PlayerState 만 다르게 넘기면 된다).</summary>
         public IEnumerator DexScreen(PlayerState state)

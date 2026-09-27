@@ -778,6 +778,114 @@
           "move": "blast"
         }
       ]
+    },
+    {
+      "id": 16,
+      "name": "꼬물이",
+      "type": "grass",
+      "look": "worm",
+      "stage": 1,
+      "color": "#b5d33e",
+      "belly": "#f2f7d9",
+      "baseStats": {
+        "hp": 70,
+        "atk": 55,
+        "def": 80,
+        "spd": 35
+      },
+      "evolve": null,
+      "catchRate": 0.4,
+      "baseExp": 95,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "vine"
+        },
+        {
+          "level": 14,
+          "move": "leaf"
+        },
+        {
+          "level": 27,
+          "move": "solar"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "name": "동글이",
+      "type": "water",
+      "look": "shell",
+      "stage": 1,
+      "color": "#3fb6c6",
+      "belly": "#dff7f5",
+      "baseStats": {
+        "hp": 65,
+        "atk": 50,
+        "def": 90,
+        "spd": 40
+      },
+      "evolve": null,
+      "catchRate": 0.35,
+      "baseExp": 100,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "splash"
+        },
+        {
+          "level": 14,
+          "move": "bubble"
+        },
+        {
+          "level": 27,
+          "move": "wave"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "name": "스르릉",
+      "type": "rock",
+      "look": "coil",
+      "stage": 1,
+      "color": "#8090a8",
+      "belly": "#dde5ee",
+      "baseStats": {
+        "hp": 55,
+        "atk": 70,
+        "def": 65,
+        "spd": 70
+      },
+      "evolve": null,
+      "catchRate": 0.3,
+      "baseExp": 105,
+      "learnset": [
+        {
+          "level": 1,
+          "move": "tackle"
+        },
+        {
+          "level": 1,
+          "move": "pebble"
+        },
+        {
+          "level": 14,
+          "move": "slide"
+        },
+        {
+          "level": 27,
+          "move": "edge"
+        }
+      ]
     }
   ]
 }

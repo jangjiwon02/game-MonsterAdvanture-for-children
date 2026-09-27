@@ -5,7 +5,7 @@ Unity / Unreal 이식 시 동일한 동작을 보장하기 위한 기준 문서.
 
 ## 폴더
 - `web/index.html` — 현재 플레이 가능한 웹 버전(참조 구현)
-- `data/game-data.json` — 타입 / 상성표 / 기술 / 종족(16종). `node data/extract.js`로 재생성
+- `data/game-data.json` — 타입 / 상성표 / 기술 / 종족(19종, 그중 3종은 진화 없는 독립 종족). `node data/extract.js`로 재생성
 - `unity/`, `unreal/` — 각 엔진 프로젝트(비교용, 추후 생성)
 
 ## 능력치 (레벨 L, 종족 기본값 b)
