@@ -23,7 +23,7 @@ namespace MonsterAdventure.Tests
             Assert.AreEqual(18, _data.Moves.Count);
             Assert.AreEqual("불꼬마", _data.GetSpecies(0).Name);
             Assert.IsNull(_data.GetSpecies(1).Evolve);
-            Assert.AreEqual(16, _data.GetSpecies(0).Evolve.Level);
+            Assert.AreEqual(10, _data.GetSpecies(0).Evolve.Level);   // 40% 낮춘 새 진화 레벨(원래 16)
         }
 
         [Test]
