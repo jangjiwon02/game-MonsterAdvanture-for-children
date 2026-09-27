@@ -238,6 +238,73 @@ function shinyEll(x, y, rx, ry, fill, stroke) {
   c.globalAlpha = 1;
   c.restore();
 }
+// 종족별 룩(f) → 몸통 실루엣 archetype. 기존엔 전부 동그란 몸통 하나였는데,
+// 뱀/용/물고기/나비/공룡/호랑이/늑대 7가지로 나눠서 실루엣 자체가 다르게 보이게 한다.
+const BODY_SHAPE = {
+  flame: 'dinosaur', bumps: 'dinosaur',
+  horn: 'dragon', wings: 'dragon',
+  fin: 'fish', shell: 'fish',
+  leaf: 'butterfly', worm: 'butterfly',
+  bolt: 'wolf',
+  ears: 'tiger',
+  coil: 'snake',
+};
+// 옆으로 긴 몸통(물고기·뱀)은 눈코입도 앞쪽으로 당겨줘야 자연스럽다. look(f) 기준으로 건다.
+const FACE_OFFSET = { fin: [-.22, -.02], shell: [-.22, -.02], coil: [-.15, -.05] };
+
+/// <summary>몸통·다리·꼬리·날개 등 archetype별 실루엣. 종족별 부착물(look)은 이 위/아래에 그대로 얹힌다.</summary>
+function drawBody(shape, r, C, C2, O) {
+  if (shape === 'dinosaur') {
+    poly([[.5 * r, .5 * r], [1.25 * r, .7 * r], [.68 * r, .95 * r]], C, O);
+    ell(-.42 * r, .92 * r, .24 * r, .2 * r, C, O);
+    ell(.42 * r, .92 * r, .24 * r, .2 * r, C, O);
+    ell(-.68 * r, .62 * r, .13 * r, .2 * r, C, O);
+    ell(.68 * r, .62 * r, .13 * r, .2 * r, C, O);
+    shinyEll(0, -.02 * r, .78 * r, .85 * r, C, O);
+    shinyEll(0, .32 * r, .5 * r, .46 * r, C2);
+  } else if (shape === 'dragon') {
+    poly([[.55 * r, .3 * r], [1.35 * r, .1 * r], [1.05 * r, .55 * r], [.65 * r, .55 * r]], C, O);
+    ell(-.4 * r, .88 * r, .26 * r, .17 * r, C, O);
+    ell(.4 * r, .88 * r, .26 * r, .17 * r, C, O);
+    shinyEll(0, 0, .85 * r, .8 * r, C, O);
+    shinyEll(0, .25 * r, .55 * r, .42 * r, C2);
+  } else if (shape === 'fish') {
+    poly([[.8 * r, -.2 * r], [1.4 * r, -.4 * r], [1.15 * r, 0], [1.4 * r, .4 * r], [.8 * r, .2 * r]], C, O);
+    shinyEll(-.05 * r, 0, .95 * r, .6 * r, C, O);
+    shinyEll(-.05 * r, .18 * r, .58 * r, .3 * r, C2);
+  } else if (shape === 'butterfly') {
+    [-1, 1].forEach(s => {
+      c.globalAlpha = .85;
+      poly([[s * .2 * r, -.5 * r], [s * 1.15 * r, -.9 * r], [s * .95 * r, -.15 * r], [s * .25 * r, -.05 * r]], C2, O);
+      poly([[s * .2 * r, .05 * r], [s * .95 * r, .25 * r], [s * .7 * r, .65 * r], [s * .2 * r, .5 * r]], C2, O);
+      c.globalAlpha = 1;
+    });
+    shinyEll(0, .05 * r, .34 * r, .78 * r, C, O);
+    shinyEll(0, .3 * r, .2 * r, .4 * r, C2);
+  } else if (shape === 'wolf' || shape === 'tiger') {
+    const stocky = shape === 'tiger';
+    poly([[-.6 * r, .3 * r], [-1.2 * r, .1 * r * (stocky ? 1 : 1.3)], [-.65 * r, .55 * r]], C, O);
+    ell(-.55 * r, .95 * r, stocky ? .17 * r : .14 * r, .22 * r, C, O);
+    ell(.55 * r, .95 * r, stocky ? .17 * r : .14 * r, .22 * r, C, O);
+    ell(-.32 * r, .8 * r, .12 * r, .2 * r, C, O);
+    ell(.32 * r, .8 * r, .12 * r, .2 * r, C, O);
+    shinyEll(0, -.02 * r, stocky ? .78 * r : .7 * r, stocky ? .82 * r : .78 * r, C, O);
+    shinyEll(0, .28 * r, .5 * r, .42 * r, C2);
+    ell(0, .05 * r, .16 * r, .12 * r, shade(C, -.15), O);
+  } else if (shape === 'snake') {
+    poly([[.7 * r, .32 * r], [1.35 * r, .18 * r], [.85 * r, -.05 * r]], C, O);
+    shinyEll(0, 0, .92 * r, .55 * r, C, O);
+    shinyEll(0, .2 * r, .62 * r, .28 * r, C2);
+  } else {
+    ell(-.45 * r, .85 * r, .3 * r, .16 * r, C, O);
+    ell(.45 * r, .85 * r, .3 * r, .16 * r, C, O);
+    shinyEll(0, 0, r, .9 * r, C, O);
+    shinyEll(0, .3 * r, .62 * r, .5 * r, C2);
+  }
+  c.globalAlpha = 0.32;
+  ell(-.18 * r, -.55 * r, .28 * r, .13 * r, '#ffffff', null, -0.3);
+  c.globalAlpha = 1;
+}
 function drawMon(sp, cx, cy, r, o = {}) {
   const st2 = sp.st === 2;
   r *= st2 ? 1.15 : 1;
@@ -282,26 +349,10 @@ function drawMon(sp, cx, cy, r, o = {}) {
       c.beginPath(); c.moveTo(s * .18 * r, -.85 * r); c.lineTo(s * .42 * r, -1.15 * r); c.lineTo(s * .55 * r, -1.5 * r); c.stroke();
       ell(s * .55 * r, -1.55 * r, .09 * r, .09 * r, shade(C, 0.25), O);
     });
-  } else if (f === 'shell') {
-    ell(0, .05 * r, 1.18 * r, .95 * r, shade(C, -0.35), O);
-  } else if (f === 'coil') {
-    const tail = [[.6 * r, .75 * r], [1.15 * r, .55 * r], [1.05 * r, .15 * r], [.75 * r, .05 * r]];
-    c.lineCap = 'round'; c.lineJoin = 'round';
-    c.strokeStyle = O; c.lineWidth = r * .32;
-    c.beginPath(); c.moveTo(tail[0][0], tail[0][1]); tail.slice(1).forEach(p => c.lineTo(p[0], p[1])); c.stroke();
-    c.strokeStyle = C; c.lineWidth = r * .24;
-    c.beginPath(); c.moveTo(tail[0][0], tail[0][1]); tail.slice(1).forEach(p => c.lineTo(p[0], p[1])); c.stroke();
   }
 
-  /* 몸 */
-  ell(-.45 * r, .85 * r, .3 * r, .16 * r, C, O);
-  ell(.45 * r, .85 * r, .3 * r, .16 * r, C, O);
-  shinyEll(0, 0, r, .9 * r, C, O);
-  shinyEll(0, .3 * r, .62 * r, .5 * r, C2);
-  // 정수리 광택(부드러운 흰 크레센트) — 공식 아트의 "글로시" 하이라이트 참고
-  c.globalAlpha = 0.32;
-  ell(-.18 * r, -.55 * r, .28 * r, .13 * r, '#ffffff', null, -0.3);
-  c.globalAlpha = 1;
+  /* 몸 — 종족별 archetype 실루엣(뱀/용/물고기/나비/공룡/호랑이/늑대) */
+  drawBody(BODY_SHAPE[f] || 'round', r, C, C2, O);
 
   /* 앞쪽 파츠 */
   if (f === 'flame') {
@@ -366,7 +417,9 @@ function drawMon(sp, cx, cy, r, o = {}) {
     poly([[.28 * r, -.7 * r], [.36 * r, -.95 * r], [.16 * r, -.78 * r]], shade(C, -0.2), O);
   }
 
-  /* 얼굴 */
+  /* 얼굴 — 옆으로 긴 몸통(물고기·뱀)은 앞쪽으로 당겨서 자연스럽게 */
+  const [fdx, fdy] = FACE_OFFSET[f] || [0, 0];
+  c.save(); c.translate(fdx * r, fdy * r);
   ell(-.36 * r, -.16 * r, .17 * r, .21 * r, '#fff', O);
   ell(.36 * r, -.16 * r, .17 * r, .21 * r, '#fff', O);
   ell(-.34 * r, -.13 * r, .09 * r, .12 * r, '#151515');
@@ -382,6 +435,7 @@ function drawMon(sp, cx, cy, r, o = {}) {
     c.beginPath(); c.moveTo(-.6 * r, -.46 * r); c.lineTo(-.2 * r, -.34 * r);
     c.moveTo(.6 * r, -.46 * r); c.lineTo(.2 * r, -.34 * r); c.stroke();
   }
+  c.restore();
   c.restore();
 }
 
