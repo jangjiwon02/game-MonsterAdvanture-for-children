@@ -13,8 +13,17 @@ namespace MonsterAdventure
     /// </summary>
     public static class TelemetryClient
     {
-        /// <summary>Apps Script 웹 앱 배포 URL. 비어 있으면 전송을 건너뛴다.</summary>
-        public const string EndpointUrl = ""; // TODO: 배포한 Apps Script 웹 앱 URL을 여기 붙여넣기
+        /// <summary>Apps Script 웹 앱 배포 URL. Assets/Resources/telemetry-endpoint.txt 첫 줄에서 읽는다
+        /// (소스코드에 직접 안 적는다 — 이 저장소가 public GitHub 라서, URL을 코드에 박아 커밋하면 누구나
+        /// 볼 수 있고 스프레드시트에 스팸을 보낼 수 있다). 그 파일은 .gitignore 에 있어 커밋되지 않는다.
+        /// 파일이 없으면 빈 문자열이 되어 전송을 건너뛴다.</summary>
+        public static readonly string EndpointUrl = LoadEndpoint();
+
+        static string LoadEndpoint()
+        {
+            var asset = Resources.Load<TextAsset>("telemetry-endpoint");
+            return asset != null ? asset.text.Trim() : "";
+        }
 
         const string DeviceIdKey = "telemetry_device_id";
         const string InstallSentKey = "telemetry_install_sent";
