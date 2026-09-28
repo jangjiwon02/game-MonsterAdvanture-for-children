@@ -24,6 +24,10 @@ unity/test_results.xml
 unity/*.log
 logs/
 
+# 비밀값(커밋 금지) — 이 저장소는 public GitHub 라 여기 들어가면 누구나 본다
+unity/Assets/Resources/telemetry-endpoint.txt
+unity/Assets/Resources/telemetry-endpoint.txt.meta
+
 # OS/에디터
 .DS_Store
 Thumbs.db
