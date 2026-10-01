@@ -106,7 +106,11 @@ namespace MonsterAdventure
             }
             else
             {
-                var octets = new[] { 127, 0, 0, 1 };
+                // 127.0.0.1(루프백)은 "이 기기 자신"을 가리켜서 다른 기기끼리는 절대 쓸 수 없다 — 그런데도
+                // 기본값을 127.0.0.1로 두면 설명 없이 OK만 누르다 그 값 그대로 접속을 시도하는 경우가 흔하다.
+                // 그래서 흔한 공유기 대역(192.168.0.x)을 기본값으로 두고, 호스트 화면을 보라고 먼저 알려준다.
+                yield return _ui.Say("호스트 기기 화면에 뜬 주소(예: 192.168.0.5)를 그대로 입력하세요.\n127.0.0.1은 이 기기 자신을 가리키는 주소라 다른 기기끼리는 쓸 수 없어요!", 1400);
+                var octets = new[] { 192, 168, 0, 1 };
                 for (int i = 0; i < 4; i++)
                 {
                     var items = new string[256];
@@ -114,7 +118,7 @@ namespace MonsterAdventure
                     yield return _ui.Choose(items, new MenuOptions
                     {
                         Rect = new Rect(160, 40, 160, 7 * 26 + 16), MaxRows = 7, Start = octets[i],
-                        Prompt = $"서버 주소 {string.Join(".", octets)} — {i + 1}번째 자리를 고르세요",
+                        Prompt = $"호스트 주소 {string.Join(".", octets)} — {i + 1}번째 자리 (호스트 화면 참고)",
                     });
                     octets[i] = _ui.Choice;
                 }
