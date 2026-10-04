@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Sockets;
 using System.Threading;
+using MonsterAdventure.Core;
 using Newtonsoft.Json.Linq;
 
 namespace MonsterAdventure.Net
@@ -58,7 +59,8 @@ namespace MonsterAdventure.Net
         public void SendMove(NetDirection dir) => SendRaw(NetMsgType.Move, new MoveMessage { Dir = (int)dir });
         public void SendChallenge(int targetId) => SendRaw(NetMsgType.ChallengeRequest, new ChallengeRequestMessage { TargetId = targetId });
         public void SendChallengeResponse(bool accept) => SendRaw(NetMsgType.ChallengeResponse, new ChallengeResponseMessage { Accept = accept });
-        public void SendDuelAction(string moveId) => SendRaw(NetMsgType.DuelAction, new DuelActionMessage { MoveId = moveId });
+        public void SendDuelAction(BattleAction action) => SendRaw(NetMsgType.DuelAction, DuelActionMessage.From(action));
+        public void SendDuelReplace(int partyIndex) => SendRaw(NetMsgType.DuelReplace, new DuelReplaceMessage { PartyIndex = partyIndex });
         public void SendUpdateAccount(string stateJson) => SendRaw(NetMsgType.UpdateAccount, new UpdateAccountMessage { StateJson = stateJson });
 
         void SendRaw(string type, object payload)
