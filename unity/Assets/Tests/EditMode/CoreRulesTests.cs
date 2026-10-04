@@ -244,6 +244,35 @@ namespace MonsterAdventure.Tests
         }
 
         [Test]
+        public void Water_IsWalkable_AndEncountersAt14Percent()
+        {
+            var map = WorldMap.Generate();
+            int water = 0;
+            for (int y = 0; y < WorldMap.Height; y++)
+                for (int x = 0; x < WorldMap.Width; x++)
+                    if (map[x, y] == Tile.Water) { water++; Assert.IsTrue(map.IsPassable(x, y), $"물({x},{y})은 걸을 수 있어야 한다"); }
+            Assert.Greater(water, 0, "맵에 물 타일이 있어야 이 테스트가 의미가 있다");
+
+            Assert.IsTrue(WildEncounter.ShouldEncounter(Tile.Water, new ScriptedRng(0.139)));
+            Assert.IsFalse(WildEncounter.ShouldEncounter(Tile.Water, new ScriptedRng(0.14)));
+        }
+
+        [Test]
+        public void WildPool_WaterTypesOnlyInWater_AndNeverInGrass()
+        {
+            foreach (double d in new[] { 3.0, 15.0 })
+            {
+                var grass = WildEncounter.Pool(_data, d, water: false);
+                var water = WildEncounter.Pool(_data, d, water: true);
+                Assert.IsNotEmpty(grass);
+                Assert.IsNotEmpty(water);
+                Assert.IsTrue(grass.TrueForAll(s => s.Type != "water"), "풀숲엔 물 타입이 안 나온다");
+                Assert.IsTrue(water.TrueForAll(s => s.Type == "water"), "물에는 물 타입만 나온다");
+                Assert.IsTrue(water.TrueForAll(s => s.Stage == 1), "야생 후보는 기본형만");
+            }
+        }
+
+        [Test]
         public void Wild_NearVillageNeverSpawnsHornFireFamily_ButFarAwayCan()
         {
             var rng = new SystemRng(1234);
