@@ -120,22 +120,49 @@ namespace MonsterAdventure
             SaveStore.Save(State);
         }
 
+        const float HeartbeatSeconds = 60f;
         DateTime _sessionStartUtc;
+        bool _sessionOpen;
+        Coroutine _heartbeat;
 
         void BeginSession()
         {
+            if (State == null || _sessionOpen) return;
+            _sessionOpen = true;
             _sessionStartUtc = DateTime.UtcNow;
             TelemetryClient.SendSessionStart(State.PlayerName);
+            SendProgressSnapshot();   // 첫 저장을 기다리지 않고 바로 '최신현황'에 이름이 올라오게 한다
+            _heartbeat = StartCoroutine(HeartbeatLoop());
         }
 
         void EndSession()
         {
-            if (State == null) return;
+            if (State == null || !_sessionOpen) return;
+            _sessionOpen = false;
+            if (_heartbeat != null) { StopCoroutine(_heartbeat); _heartbeat = null; }
             double elapsed = (DateTime.UtcNow - _sessionStartUtc).TotalSeconds;
             if (elapsed <= 0) return;
             State.TotalPlaySeconds += elapsed;
             SaveStore.Save(State);
             TelemetryClient.SendSessionEnd(State.PlayerName, elapsed, State.TotalPlaySeconds);
+        }
+
+        /// <summary>플레이 중에는 1분마다 현재 상태를 보낸다. 앱이 백그라운드에서 강제 종료되면 session_end 가 못 나가는
+        /// 경우가 있는데, 그래도 '마지막 접속'과 누적 플레이 시간이 최대 1분 오차로 남는다.</summary>
+        IEnumerator HeartbeatLoop()
+        {
+            for (;;)
+            {
+                yield return new WaitForSecondsRealtime(HeartbeatSeconds);
+                SendProgressSnapshot();
+            }
+        }
+
+        void SendProgressSnapshot()
+        {
+            double total = State.TotalPlaySeconds + (_sessionOpen ? (DateTime.UtcNow - _sessionStartUtc).TotalSeconds : 0);
+            TelemetryClient.SendProgress(State.PlayerName,
+                State.Party.Count > 0 ? State.Party[0].Level : 0, State.Dex.Count, State.Money, total);
         }
 
         void OnApplicationPause(bool paused)
@@ -317,17 +344,18 @@ namespace MonsterAdventure
             BeginScene();
             for (;;)
             {
-                var items = new[] { "몬스터", "가방", "박스", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "닫기" };
+                var items = new[] { "몬스터", "가방", "박스", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "게임 종료", "닫기" };
                 yield return Ui.Choose(items,
                     new MenuOptions { Rect = new Rect(UiKit.VirtualWidth - 146, 8, 138, items.Length * 26 + 16), Cancel = true });
                 int i = Ui.Choice;
-                if (i == -1 || i == 6) break;
+                if (i == -1 || i == 7) break;
                 if (i == 0) yield return PartyMenu();
                 else if (i == 1) yield return BagMenu();
                 else if (i == 2) yield return BoxMenu();
                 else if (i == 3) yield return Ui.DexScreen(State);
                 else if (i == 4) yield return Ui.Say(SaveStore.Save(State) ? "저장했다!" : "저장에 실패했다...", 500);
-                else { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
+                else if (i == 5) { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
+                else yield return Ui.ConfirmQuit(() => { EndSession(); });   // 접속 기록(세션 종료)을 먼저 내보낸 뒤 끈다
             }
             EndScene();
         }

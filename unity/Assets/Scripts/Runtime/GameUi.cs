@@ -303,6 +303,25 @@ namespace MonsterAdventure
             UiKit.Text("X/Z: 목록으로", UiKit.VirtualWidth - 12, UiKit.VirtualHeight - 26, 11, UiKit.C("#9aa2d0"), TextAnchor.UpperRight);
         }
 
+        /// <summary>"게임을 종료하시겠습니까?" 예/아니오. 예를 고르면 beforeQuit(저장 등)을 부르고 잠깐 안내한 뒤 앱을 끝낸다
+        /// (그 짧은 대기는 종료 직전의 접속 기록 전송이 끝날 시간을 준다). 반환값은 없고, 아니오/취소면 그냥 돌아온다.</summary>
+        public IEnumerator ConfirmQuit(Action beforeQuit = null)
+        {
+            yield return Choose(new[] { "예", "아니오" }, new MenuOptions
+            {
+                Rect = new Rect(UiKit.VirtualWidth / 2f - 70, 150, 140, 2 * 26 + 16),
+                Prompt = "게임을 종료하시겠습니까?", Full = true, Cancel = true,
+            });
+            if (Choice != 0) yield break;
+            beforeQuit?.Invoke();
+            yield return Say("게임을 종료합니다...", 900);
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
         /// <summary>옵션 명단: 교사 1명 + 학생 목록. Z/X 로 닫는다.</summary>
         public IEnumerator RosterScreen()
         {
