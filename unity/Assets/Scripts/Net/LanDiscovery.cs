@@ -144,6 +144,7 @@ namespace MonsterAdventure.Net
         Thread _listenThread;
         volatile bool _running;
         volatile int _sweepsRunning;
+        volatile bool _disposed;   // 방을 골라 접속하는 순간에도 검색 소켓 수십 개가 계속 열려 있지 않게
 
         public bool SweepRunning => _sweepsRunning > 0;
 
@@ -200,7 +201,7 @@ namespace MonsterAdventure.Net
                         await Task.WhenAll(list.Select(async ip =>
                         {
                             await gate.WaitAsync();
-                            try { await Task.Run(() => Probe(ip, port)); }
+                            try { if (!_disposed) await Task.Run(() => Probe(ip, port)); }
                             finally { gate.Release(); }
                         }));
                     }
@@ -256,6 +257,7 @@ namespace MonsterAdventure.Net
         public void Dispose()
         {
             _running = false;
+            _disposed = true;
             try { _udp?.Close(); } catch (Exception) { /* 무시 */ }
         }
     }

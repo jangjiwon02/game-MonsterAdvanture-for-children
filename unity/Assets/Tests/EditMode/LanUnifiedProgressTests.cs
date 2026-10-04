@@ -107,5 +107,37 @@ namespace MonsterAdventure.Tests
             var (_, joined) = WaitFor(c1, NetMsgType.Joined);
             Assert.AreEqual((int)w2["Color"], (int)joined["Info"]["Color"]);
         }
+
+        [Test]
+        public void Connect_RetriesUntilTheServerAnswers_InsteadOfFailingOnTheFirstTry()
+        {
+            // 첫 시도가 실패하는 상황(폰 Wi-Fi 의 첫 패킷 유실 등)을, 서버가 조금 늦게 열리는 것으로 흉내 낸다.
+            int port;
+            { var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); probe.Start(); port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port; probe.Stop(); }
+            TcpArenaServer server = null;
+            var opener = new System.Threading.Thread(() =>
+            {
+                System.Threading.Thread.Sleep(600);
+                server = new TcpArenaServer(_data, _map, null, port);
+                server.Start();
+            });
+            opener.Start();
+            try
+            {
+                using var c = new TcpArenaClient();
+                c.Connect("127.0.0.1", port, "재시도", 0, 1000, null, 8);
+                WaitFor(c, NetMsgType.Welcome);
+            }
+            finally { opener.Join(); server?.Dispose(); }
+        }
+
+        [Test]
+        public void Connect_GivesUpWithAnException_WhenNobodyListens()
+        {
+            int port;
+            { var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); probe.Start(); port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port; probe.Stop(); }
+            using var c = new TcpArenaClient();
+            Assert.Catch(() => c.Connect("127.0.0.1", port, "아무도없음", 0, 300, null, 2));
+        }
     }
 }
