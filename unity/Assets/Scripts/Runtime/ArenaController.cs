@@ -11,7 +11,7 @@ namespace MonsterAdventure
     /// <summary>
     /// LAN 대결 마당(같은 충주 지도를 여럿이서 함께 걷고, 마주치면 도전). 단일 플레이 저장(PlayerState)과는
     /// 완전히 분리된 모드다 — 이 모드의 진행은 저장 파일에 손대지 않는다. 트레이너 이름별 영구 계정(서버 쪽 파일)과
-    /// 접속 시 출석 보너스는 서버(TcpArenaServer)가 처리하고, 도전이 성사되면 1:1 대결(DuelController)로 이어진다.
+    /// 접속 시 출석 보너스는 서버(TcpArenaServer)가 처리하고, 도전이 성사되면 파티 대결(BattleController 의 대결 모드)로 이어진다.
     /// </summary>
     public sealed class ArenaController : MonoBehaviour
     {
@@ -35,7 +35,7 @@ namespace MonsterAdventure
         int? _waitingOnChallengeTo;    // 우리가 도전을 건 상대(응답 대기 중)
         string _statusLine;            // 화면 아래에 계속 보여주는 짧은 안내
         WelcomeMessage _pendingWelcome; // Update() 가 큐에서 받아 두면 Lobby() 코루틴이 가져간다(소비자를 하나로 유지)
-        DuelController _duel;          // 대결 중이면 non-null — Update() 의 이동·도전 입력을 잠그는 데도 쓴다
+        BattleController _duel;        // 대결 중이면 non-null — Update() 의 이동·도전 입력을 잠그는 데도 쓴다
 
         // 원격 접속 기록(TelemetryClient). LAN 모드는 단일 플레이 명단과 별개로 직접 타이핑한 트레이너 이름을 쓰므로,
         // 명단의 실제 학생 이름과 같은 줄에 덮어쓰지 않도록 "(LAN)" 을 붙여 구분한다.
@@ -438,7 +438,8 @@ namespace MonsterAdventure
                     break;
                 }
                 case NetMsgType.Error:
-                    StartCoroutine(_ui.Say(d.ToObject<ErrorMessage>().Reason));
+                    if (_duel != null) _duel.Feed(type, d);      // 대결 중이면 대결 화면이 안내하고 같은 단계를 다시 한다
+                    else StartCoroutine(_ui.Say(d.ToObject<ErrorMessage>().Reason));
                     break;
                 case NetMsgType.DuelStart:
                 {
@@ -446,20 +447,21 @@ namespace MonsterAdventure
                     _localPlayer.Locked = true;
                     GameInput.Instance.ClearHeld();
                     Bgm.Play(BgmKind.Battle);
-                    _duel = new DuelController(_ui, _data, _client, start);
-                    StartCoroutine(RunDuel());
+                    _duel = new BattleController(this, _ui, _data, _client);
+                    StartCoroutine(RunDuel(start));
                     break;
                 }
-                case NetMsgType.DuelEvent:
+                case NetMsgType.DuelEvents:
                 case NetMsgType.DuelEnded:
                     _duel?.Feed(type, d);
                     break;
             }
         }
 
-        IEnumerator RunDuel()
+        IEnumerator RunDuel(DuelStartMessage start)
         {
-            yield return _duel.Run();
+            yield return _duel.RunPvp(start);          // 끝나면 화면이 검게 덮여 있다
+            yield return GameUi.Tween(.3f, p => _ui.Fade = 1f - p);
             _duel = null;
             _localPlayer.Locked = false;
             GameInput.Instance.ClearHeld();
@@ -639,7 +641,7 @@ namespace MonsterAdventure
 
         /* ---------------------------------- 문 이벤트 ---------------------------------- */
 
-        /// <summary>대결은 매번 HP 가득 채운 새 사본으로 붙기 때문에(BuildDuelMonster), 계정 파티 HP 자체는 대결로는
+        /// <summary>대결은 매번 HP 가득 채운 새 사본으로 붙기 때문에(BuildDuelParty), 계정 파티 HP 자체는 대결로는
         /// 줄지 않는다 — 그래도 문 앞·화면 흐름은 싱글플레이와 똑같이 동작하게 만든다(나중에 대결 밖 전투가
         /// 생기면 그때 진짜로 의미가 생긴다).</summary>
         IEnumerator ArenaHealScene()

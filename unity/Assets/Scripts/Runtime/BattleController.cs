@@ -2,6 +2,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using MonsterAdventure.Core;
+using MonsterAdventure.Net;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 using static MonsterAdventure.Core.Korean;
 
@@ -10,6 +12,8 @@ namespace MonsterAdventure
     /// <summary>
     /// 야생 전투 한 판의 진행과 연출. 규칙은 전부 Core 의 BattleSession 이 계산하고,
     /// 여기서는 그 이벤트를 하나씩 받아 웹 버전과 같은 문구·애니메이션으로 재생한다.
+    /// LAN 대결(<see cref="RunPvp"/>)도 같은 화면·재생 코드를 쓴다 — 규칙은 서버(PvpBattle)가 판정하고, 여기서는
+    /// 서버가 보낸 사건을 복제본(PvpReplica)에 반영하면서 BattleEvent 로 바꿔 재생할 뿐이다.
     /// </summary>
     public sealed class BattleController
     {
@@ -27,6 +31,10 @@ namespace MonsterAdventure
         readonly IRng _rng;
 
         BattleSession _s;
+        // LAN 대결 모드(RunPvp)에서만 채워진다. 단일 플레이에서는 전부 null.
+        PvpReplica _pvp;
+        TcpArenaClient _client;
+        readonly Queue<(string Type, JObject Data)> _incoming = new Queue<(string, JObject)>();
         BattleAction _picked;
         Vis _ve = Vis.Default, _vp = Vis.Default;
         float _dhpEnemy, _dhpPlayer;                 // 화면에 보이는 HP(모델 값을 따라 천천히 움직인다)
@@ -53,8 +61,22 @@ namespace MonsterAdventure
             _host = host; _ui = ui; _data = data; _state = state; _rng = rng;
         }
 
+        /// <summary>LAN 대결용. 규칙 난수·플레이어 저장은 쓰지 않는다(서버가 판정하고 임시 사본으로 싸운다).</summary>
+        public BattleController(MonoBehaviour host, GameUi ui, GameData data, TcpArenaClient client)
+        {
+            _host = host; _ui = ui; _data = data; _client = client;
+        }
+
+        // 화면·재생 코드는 이 접근자만 거치므로 단일 플레이(_s)와 대결(_pvp)이 같은 코드를 쓴다.
+        Monster ActiveMon => _pvp != null ? _pvp.Active : _s.Active;
+        Monster EnemyMon => _pvp != null ? _pvp.Opp : _s.Enemy;
+        int ActiveIdx => _pvp != null ? _pvp.ActiveIndex : _s.ActiveIndex;
+        IList<Monster> PartyList => _pvp != null ? _pvp.Mine : _state.Party;
+        /// <summary>상대 몬스터 앞에 붙는 말: 야생이면 "야생의 ", 대결이면 "{상대 이름}의 ".</summary>
+        string EnemyPrefix => _pvp != null ? $"{_pvp.OpponentName}의 " : "야생의 ";
+
         string PlayerName => _data.GetSpecies(_shownSpecies).Name;
-        string EnemyName => _s.Enemy.Species(_data).Name;
+        string EnemyName => EnemyMon.Species(_data).Name;
         string TypeName(string id) => _data.Types.Find(t => t.Id == id).Name;
 
         /// <summary>전투가 끝나면 화면은 검게 덮인 채(Fade = 1)로 돌아온다. 이후 처리는 호출한 쪽이 한다.</summary>
@@ -71,17 +93,7 @@ namespace MonsterAdventure
             _ballVisible = false; _afterFaint = false;
             _ui.Data = _data;
 
-            // 흰 점멸 → 검게 → 전투 화면 → 밝게
-            Sfx.Play(SfxKind.Encounter);
-            yield return GameUi.Tween(.65f, p => _ui.Flash = Mathf.FloorToInt(p * 6) % 2 == 0 ? .8f : 0f);
-            _ui.Flash = 0f;
-            yield return GameUi.Tween(.3f, p => _ui.Fade = p);
-            _ui.DrawScene = DrawBattle;
-            _ui.AlwaysShowTextBox = true;
-            _ve.X = 160f; _vp.X = -160f;
-            yield return GameUi.Tween(.3f, p => _ui.Fade = 1f - p);
-            _host.StartCoroutine(GameUi.Tween(.6f, p => { _ve.X = 160f * (1f - p); _vp.X = -160f * (1f - p); }));
-            yield return GameUi.Wait(.6f);
+            yield return EnterScene();
 
             yield return _ui.Say($"앗! 야생의 {J(EnemyName, "이", "가")} 나타났다!", 900);
             _vp.S = 0f;
@@ -98,18 +110,137 @@ namespace MonsterAdventure
                 yield return PlayTurn(_picked);
             }
 
+            yield return ExitScene();
+        }
+
+        /// <summary>흰 점멸 → 검게 → 전투 화면 → 밝게 (양쪽 몬스터가 옆에서 들어온다).</summary>
+        IEnumerator EnterScene()
+        {
+            Sfx.Play(SfxKind.Encounter);
+            yield return GameUi.Tween(.65f, p => _ui.Flash = Mathf.FloorToInt(p * 6) % 2 == 0 ? .8f : 0f);
+            _ui.Flash = 0f;
+            yield return GameUi.Tween(.3f, p => _ui.Fade = p);
+            _ui.DrawScene = DrawBattle;
+            _ui.AlwaysShowTextBox = true;
+            _ve.X = 160f; _vp.X = -160f;
+            yield return GameUi.Tween(.3f, p => _ui.Fade = 1f - p);
+            _host.StartCoroutine(GameUi.Tween(.6f, p => { _ve.X = 160f * (1f - p); _vp.X = -160f * (1f - p); }));
+            yield return GameUi.Wait(.6f);
+        }
+
+        IEnumerator ExitScene()
+        {
             yield return GameUi.Tween(.3f, p => _ui.Fade = p);
             _ui.DrawScene = null;
             _ui.AlwaysShowTextBox = false;
         }
 
+        /* ---------------------------------- LAN 대결 ---------------------------------- */
+
+        /// <summary>서버가 보낸 duelEvents/duelEnded 메시지를 넘겨준다(ArenaController.Handle 에서 호출).</summary>
+        public void Feed(string type, JObject data) => _incoming.Enqueue((type, data));
+
+        /// <summary>
+        /// LAN 대결 한 판. 단일 플레이처럼 메뉴에서 행동을 고르면 서버로 보내고, 양쪽이 고른 뒤 서버가 판정해 보낸
+        /// 사건 묶음을 같은 화면에서 재생한다. 끝나면(단일 전투처럼) 화면이 검게 덮인 채 돌아온다.
+        /// </summary>
+        public IEnumerator RunPvp(DuelStartMessage start)
+        {
+            _pvp = new PvpReplica(_data, start);
+            _dhpEnemy = _pvp.Opp.Hp;
+            _dhpPlayer = _pvp.Active.Hp;
+            _shownSpecies = _pvp.Active.SpeciesId; _shownLevel = _pvp.Active.Level;
+            _ve = Vis.Default; _vp = Vis.Default;
+            _ballVisible = false; _afterFaint = false; _aiming = false;
+            _ui.Data = _data;
+
+            yield return EnterScene();
+
+            string opp = _pvp.OpponentName;
+            yield return _ui.Say($"{J(opp, "과", "와")}의 대결이 시작되었다!", 900);
+            yield return _ui.Say($"{J(opp, "은", "는")} {J(EnemyName, "을", "를")} 내보냈다!", 700);
+            _vp.S = 0f;
+            yield return _ui.Say($"가라! {PlayerName}!", 500);
+            yield return GameUi.Tween(.3f, p => _vp.S = p);
+
+            bool needAction = true;     // 쓰러져서 교체를 기다리는 중이면 행동을 고르지 않고 다음 묶음을 기다린다
+            for (;;)
+            {
+                if (needAction && !EndPending())
+                {
+                    yield return PickAction();
+                    if (_picked == null) continue;
+                    if (!EndPending())      // 상대가 끊고 나갔으면 보낼 필요 없다
+                    {
+                        _client.SendDuelAction(_picked);
+                        if (!(_picked is FleeAction)) yield return _ui.Say("상대의 선택을 기다리는 중...", 300);
+                    }
+                }
+                while (_incoming.Count == 0) yield return null;
+                var (type, d) = _incoming.Dequeue();
+                if (type == NetMsgType.DuelEnded)
+                {
+                    yield return PlayPvpEnd(d.ToObject<DuelEndedMessage>());
+                    break;
+                }
+                if (type == NetMsgType.Error)   // 서버가 방금 행동을 거절했다 — 안내하고 같은 단계를 다시 한다
+                {
+                    yield return _ui.Say(d.ToObject<ErrorMessage>().Reason);
+                    continue;
+                }
+                if (type != NetMsgType.DuelEvents) continue;
+                needAction = true;
+                foreach (var m in d.ToObject<DuelEventsMessage>().Events)
+                {
+                    yield return PlayPvpEvent(m);
+                    needAction = m.Kind != NetMsgType.Duel.ReplacementNeeded;
+                }
+            }
+
+            yield return ExitScene();
+            _pvp = null;
+        }
+
+        bool EndPending() => _incoming.Count > 0 && _incoming.Peek().Type == NetMsgType.DuelEnded;
+
+        IEnumerator PlayPvpEvent(DuelEventMessage m)
+        {
+            var e = _pvp.Apply(m);
+            if (e != null) { yield return PlayEvent(e); yield break; }
+            if (m.Kind == NetMsgType.Duel.Forfeit)
+                yield return _ui.Say(m.Side == 0 ? "기권했다..." : $"{J(_pvp.OpponentName, "은", "는")} 기권했다!", 900);
+        }
+
+        IEnumerator PlayPvpEnd(DuelEndedMessage ended)
+        {
+            if (ended.OpponentLeft) { yield return _ui.Say("상대가 접속을 끊어서 기권승했다!", 1300); yield break; }
+            yield return _ui.Say(ended.YouWon ? "대결에서 이겼다!" : "대결에서 졌다...", 1300);
+            if (ended.ExpGained <= 0) yield break;
+            // 친선 대결이라 진 쪽도(승자보다는 적지만) 참가 경험치를 받는다. 성장은 선두 몬스터가 받으니 화면도 선두로 바꾼다.
+            _pvp.ShowLead();
+            var lead = _pvp.Active;
+            _shownSpecies = lead.SpeciesId; _shownLevel = lead.Level;
+            _dhpPlayer = lead.Hp; _vp = Vis.Default;
+            yield return _ui.Say($"{J(PlayerName, "은", "는")} 경험치를 {ended.ExpGained} 얻었다!", 800);
+            foreach (var g in ended.Growth ?? new List<GrowthEvent>()) yield return PlayGrowth(g);
+        }
+
         /* ---------------------------------- 행동 선택 ---------------------------------- */
+
+        static int FirstUsableIndex(IList<Monster> party)
+        {
+            for (int i = 0; i < party.Count; i++) if (party[i].Hp > 0) return i;
+            return 0;
+        }
+
+        static string PotionBlock(Monster m, int _) =>
+            m.Hp <= 0 ? "기절한 몬스터에게는 쓸 수 없다!" : m.Hp >= m.MaxHp ? "이미 HP가 가득 찼다!" : null;
 
         IEnumerator PickAction()
         {
             _picked = null;
-            var pm = _s.Active;
-            yield return _ui.Choose(new[] { "싸운다", "가방", "몬스터", "도망친다" },
+            var pm = ActiveMon;
+            yield return _ui.Choose(new[] { "싸운다", "가방", "몬스터", _pvp != null ? "기권한다" : "도망친다" },
                 new MenuOptions { Cols = 2, Rect = new Rect(240, 236, 228, 72), Prompt = $"{J(pm.Species(_data).Name, "은", "는")} 무엇을 할까?" });
             int a = _ui.Choice;
 
@@ -118,6 +249,16 @@ namespace MonsterAdventure
                 var labels = pm.Moves.Select(id => { var mv = _data.GetMove(id); return $"{mv.Name}  {TypeName(mv.Type)} {mv.Power}"; }).ToList();
                 yield return _ui.Choose(labels, new MenuOptions { Cols = 2, Rect = new Rect(8, 236, 464, 72), Cancel = true, Prompt = "", Full = true });
                 if (_ui.Choice >= 0) _picked = new MoveAction(pm.Moves[_ui.Choice]);
+            }
+            else if (a == 1 && _pvp != null)
+            {
+                // 대결에는 볼이 없다 — 상처약(이 대결의 남은 개수)만 보인다.
+                yield return _ui.Choose(new[] { $"상처약 x{_pvp.Potions}", "취소" },
+                    new MenuOptions { Rect = new Rect(240, 174, 228, 58), Cancel = true, Prompt = "" });
+                if (_ui.Choice != 0) yield break;
+                if (_pvp.Potions <= 0) { yield return _ui.Say("상처약이 없다!"); yield break; }
+                yield return _ui.ChooseParty(_pvp.Mine, new PartyScreenOptions { Title = "누구에게 사용할까요?", Mark = _pvp.ActiveIndex, Filter = PotionBlock });
+                if (_ui.Choice >= 0) _picked = new PotionAction(_ui.Choice);
             }
             else if (a == 1)
             {
@@ -136,20 +277,25 @@ namespace MonsterAdventure
                     if (_state.Potions <= 0) { yield return _ui.Say("상처약이 없다!"); yield break; }
                     yield return _ui.ChooseParty(_state.Party, new PartyScreenOptions
                     {
-                        Title = "누구에게 사용할까요?", Mark = _s.ActiveIndex,
-                        Filter = (m, _) => m.Hp <= 0 ? "기절한 몬스터에게는 쓸 수 없다!" : m.Hp >= m.MaxHp ? "이미 HP가 가득 찼다!" : null,
+                        Title = "누구에게 사용할까요?", Mark = _s.ActiveIndex, Filter = PotionBlock,
                     });
                     if (_ui.Choice >= 0) _picked = new PotionAction(_ui.Choice);
                 }
             }
             else if (a == 2)
             {
-                yield return _ui.ChooseParty(_state.Party, new PartyScreenOptions
+                yield return _ui.ChooseParty(PartyList, new PartyScreenOptions
                 {
-                    Title = "누구로 교체할까요?", Mark = _s.ActiveIndex, Start = _s.ActiveIndex,
-                    Filter = (m, i) => m.Hp <= 0 ? "기절한 몬스터는 싸울 수 없다!" : i == _s.ActiveIndex ? "이미 싸우고 있다!" : null,
+                    Title = "누구로 교체할까요?", Mark = ActiveIdx, Start = ActiveIdx,
+                    Filter = (m, i) => m.Hp <= 0 ? "기절한 몬스터는 싸울 수 없다!" : i == ActiveIdx ? "이미 싸우고 있다!" : null,
                 });
                 if (_ui.Choice >= 0) _picked = new SwitchAction(_ui.Choice);
+            }
+            else if (_pvp != null)
+            {
+                yield return _ui.Choose(new[] { "예", "아니오" },
+                    new MenuOptions { Rect = new Rect(348, 174, 120, 58), Cancel = true, Prompt = "정말 기권할까요?" });
+                if (_ui.Choice == 0) _picked = new FleeAction();
             }
             else _picked = new FleeAction();
         }
@@ -172,7 +318,7 @@ namespace MonsterAdventure
             {
                 case BattleEventKind.MoveUsed:
                 {
-                    string who = e.Side == Side.Player ? PlayerName : $"야생의 {EnemyName}";
+                    string who = e.Side == Side.Player ? PlayerName : $"{EnemyPrefix}{EnemyName}";
                     yield return _ui.Say($"{who}의 {_data.GetMove(e.MoveId).Name}!", 500);
                     break;
                 }
@@ -203,7 +349,7 @@ namespace MonsterAdventure
                     bool enemy = e.Side == Side.Enemy;
                     Sfx.Play(SfxKind.Faint);
                     yield return GameUi.Tween(.5f, p => SetFaint(enemy, p));
-                    yield return _ui.Say(enemy ? $"야생의 {J(EnemyName, "은", "는")} 쓰러졌다!" : $"{J(PlayerName, "은", "는")} 쓰러졌다!", 800);
+                    yield return _ui.Say(enemy ? $"{EnemyPrefix}{J(EnemyName, "은", "는")} 쓰러졌다!" : $"{J(PlayerName, "은", "는")} 쓰러졌다!", 800);
                     break;
                 }
                 case BattleEventKind.BlackedOut:
@@ -221,24 +367,43 @@ namespace MonsterAdventure
                     break;
 
                 case BattleEventKind.SwitchOut:
+                    if (e.Side == Side.Enemy)
+                    {
+                        yield return _ui.Say($"{J(_pvp.OpponentName, "은", "는")} {J(EnemyName, "을", "를")} 불러들였다!", 400);
+                        yield return GameUi.Tween(.25f, p => _ve.S = 1f - p);
+                        break;
+                    }
                     yield return _ui.Say($"돌아와, {PlayerName}!", 400);
                     yield return GameUi.Tween(.25f, p => _vp.S = 1f - p);
                     break;
                 case BattleEventKind.ReplacementNeeded:
                 {
-                    var party = _state.Party;
+                    if (e.Side == Side.Enemy)
+                    {
+                        yield return _ui.Say("상대가 몬스터를 고르는 중...", 300);
+                        break;
+                    }
+                    var party = PartyList;
                     yield return _ui.ChooseParty(party, new PartyScreenOptions
                     {
-                        Title = "다음 몬스터를 고르세요", Cancel = false, Start = _state.FirstUsableIndex,
+                        Title = "다음 몬스터를 고르세요", Cancel = false, Start = FirstUsableIndex(party),
                         Filter = (m, _) => m.Hp <= 0 ? "기절한 몬스터는 싸울 수 없다!" : null,
                     });
-                    _s.ChooseReplacement(_ui.Choice);
+                    if (_pvp != null) _client.SendDuelReplace(_ui.Choice); else _s.ChooseReplacement(_ui.Choice);
                     _afterFaint = true;
                     break;
                 }
                 case BattleEventKind.SwitchIn:
                 {
-                    var m = _s.Active;
+                    if (e.Side == Side.Enemy)
+                    {
+                        _dhpEnemy = EnemyMon.Hp;
+                        _ve = Vis.Default; _ve.S = 0f;
+                        yield return _ui.Say($"{J(_pvp.OpponentName, "은", "는")} {J(EnemyName, "을", "를")} 내보냈다!", 500);
+                        yield return GameUi.Tween(.3f, p => _ve.S = p);
+                        break;
+                    }
+                    var m = ActiveMon;
                     _shownSpecies = m.SpeciesId; _shownLevel = m.Level;
                     _dhpPlayer = m.Hp;
                     _vp = Vis.Default; _vp.S = 0f;
@@ -249,9 +414,12 @@ namespace MonsterAdventure
                 }
 
                 case BattleEventKind.PotionUsed:
+                {
                     Sfx.Play(SfxKind.Heal);
-                    yield return _ui.Say($"{_state.Party[e.PartyIndex].Species(_data).Name}의 HP가 회복되었다!", 700);
+                    string target = e.Side == Side.Enemy ? $"{_pvp.OpponentName}의 {e.Name}" : PartyList[e.PartyIndex].Species(_data).Name;
+                    yield return _ui.Say($"{target}의 HP가 회복되었다!", 700);
                     break;
+                }
 
                 case BattleEventKind.BallThrown:
                     yield return ThrowBall();
@@ -422,15 +590,15 @@ namespace MonsterAdventure
         {
             EnsureArt();
             float dt = Time.deltaTime;
-            _dhpEnemy = Approach(_dhpEnemy, _s.Enemy.Hp, _s.Enemy.MaxHp, dt);
-            _dhpPlayer = Approach(_dhpPlayer, _s.Active.Hp, _s.Active.MaxHp, dt);
+            _dhpEnemy = Approach(_dhpEnemy, EnemyMon.Hp, EnemyMon.MaxHp, dt);
+            _dhpPlayer = Approach(_dhpPlayer, ActiveMon.Hp, ActiveMon.MaxHp, dt);
 
             UiKit.FillScreen(Color.black);
             UiKit.Texture(_background, 0, 0, 480, 232);
 
             float t = Time.time * 1000f;
             float bobE = Mathf.Sin(t / 450f) * 2f, bobP = Mathf.Sin(t / 450f + 2f) * 2f;
-            var enemySp = _s.Enemy.Species(_data);
+            var enemySp = EnemyMon.Species(_data);
             var playerSp = _data.GetSpecies(_shownSpecies);
             MonsterArt.DrawAt(enemySp, 355 + _ve.X, 108 + _ve.Y + bobE, 34 * _ve.S, _ve.A * BlinkAlpha(_ve, t));
             MonsterArt.DrawAt(playerSp, 125 + _vp.X, 176 + _vp.Y + bobP, 44 * _vp.S, _vp.A * BlinkAlpha(_vp, t));
@@ -438,8 +606,8 @@ namespace MonsterAdventure
             if (_aiming) DrawAim();
             if (_ballVisible) DrawBall();
 
-            DrawInfo(enemySp, _s.Enemy.Level, _dhpEnemy, _s.Enemy.MaxHp, 14, 14, 208, false, 0);
-            DrawInfo(playerSp, _shownLevel, _dhpPlayer, _s.Active.MaxHp, 258, 158, 214, true, _s.Active.Exp);
+            DrawInfo(enemySp, EnemyMon.Level, _dhpEnemy, EnemyMon.MaxHp, 14, 14, 208, false, 0);
+            DrawInfo(playerSp, _shownLevel, _dhpPlayer, ActiveMon.MaxHp, 258, 158, 214, true, ActiveMon.Exp);
         }
 
         static float BlinkAlpha(Vis v, float tMs) => v.Blink && Mathf.FloorToInt(tMs / 60f) % 2 == 1 ? .15f : 1f;

@@ -28,27 +28,94 @@ namespace MonsterAdventure.Net
     public sealed class ChallengeResultMessage { public int OtherId; public bool Accepted; }
     public sealed class ErrorMessage { public string Reason; }
 
-    /// <summary>대결 중인 몬스터 한 마리의 공개 정보(양쪽 다 볼 수 있는 것).</summary>
+    /// <summary>대결 중인 몬스터 한 마리의 정보. 내 파티는 전부, 상대는 출전 중인 것(또는 방금 나온 것)만 보낸다.</summary>
     public sealed class DuelMonsterInfo
     {
-        public int SpeciesId; public int Level; public int Hp; public int MaxHp; public List<string> Moves;
+        public int SpeciesId; public int Level; public int Exp; public int Hp; public int MaxHp; public List<string> Moves;
     }
 
-    /// <summary>수신자 기준으로 이미 뒤집어 보낸다 — You/Opponent 이지 A/B 가 아니다.</summary>
+    /// <summary>수신자 기준으로 이미 뒤집어 보낸다. Party 는 내 파티(임시 풀피 사본, 출전은 항상 첫 칸), Opponent 는 상대의 출전 몬스터.</summary>
     public sealed class DuelStartMessage
     {
         public int OpponentId; public string OpponentName;
-        public DuelMonsterInfo You; public DuelMonsterInfo Opponent;
+        public List<DuelMonsterInfo> Party; public int Potions; public DuelMonsterInfo Opponent;
     }
 
-    public sealed class DuelActionMessage { public string MoveId; }
+    /// <summary>클라이언트가 이번 라운드에 고른 행동. Type 은 <see cref="NetMsgType.DuelActionType"/> 값.</summary>
+    public sealed class DuelActionMessage
+    {
+        public string Type; public string MoveId; public int PartyIndex;
 
-    /// <summary>Side: 0 = 나, 1 = 상대(수신자 기준으로 서버가 미리 뒤집어 보낸다).</summary>
+        public static DuelActionMessage From(BattleAction a) => a switch
+        {
+            MoveAction m => new DuelActionMessage { Type = NetMsgType.DuelActionType.Move, MoveId = m.MoveId },
+            PotionAction p => new DuelActionMessage { Type = NetMsgType.DuelActionType.Potion, PartyIndex = p.PartyIndex },
+            SwitchAction s => new DuelActionMessage { Type = NetMsgType.DuelActionType.Switch, PartyIndex = s.PartyIndex },
+            FleeAction _ => new DuelActionMessage { Type = NetMsgType.DuelActionType.Forfeit },
+            _ => throw new System.ArgumentException("대결에서 보낼 수 없는 행동이다.", nameof(a)),
+        };
+
+        /// <summary>모르는 Type 이면 null.</summary>
+        public BattleAction ToAction()
+        {
+            switch (Type)
+            {
+                case NetMsgType.DuelActionType.Move: return MoveId == null ? null : new MoveAction(MoveId);
+                case NetMsgType.DuelActionType.Potion: return new PotionAction(PartyIndex);
+                case NetMsgType.DuelActionType.Switch: return new SwitchAction(PartyIndex);
+                case NetMsgType.DuelActionType.Forfeit: return new FleeAction();
+                default: return null;
+            }
+        }
+    }
+
+    /// <summary>쓰러진 뒤 다음으로 내보낼 몬스터(내 파티 칸 번호).</summary>
+    public sealed class DuelReplaceMessage { public int PartyIndex; }
+
+    /// <summary>Side: 0 = 나, 1 = 상대(수신자 기준으로 서버가 미리 뒤집어 보낸다).
+    /// PartyIndex 는 내 쪽 사건에만 채운다(상대는 -1). Monster 는 상대의 SwitchIn·PotionUsed 에서 그 시점의 모습.</summary>
     public sealed class DuelEventMessage
     {
         public string Kind; public int Side; public string MoveId;
         public int Amount; public double Multiplier = 1.0; public bool Critical;
+        public int PartyIndex = -1; public bool TargetActive; public DuelMonsterInfo Monster;
+
+        static string KindName(PvpEventKind k)
+        {
+            switch (k)
+            {
+                case PvpEventKind.MoveUsed: return NetMsgType.Duel.MoveUsed;
+                case PvpEventKind.Missed: return NetMsgType.Duel.Missed;
+                case PvpEventKind.Damage: return NetMsgType.Duel.Damage;
+                case PvpEventKind.Fainted: return NetMsgType.Duel.Fainted;
+                case PvpEventKind.SwitchOut: return NetMsgType.Duel.SwitchOut;
+                case PvpEventKind.SwitchIn: return NetMsgType.Duel.SwitchIn;
+                case PvpEventKind.PotionUsed: return NetMsgType.Duel.PotionUsed;
+                case PvpEventKind.ReplacementNeeded: return NetMsgType.Duel.ReplacementNeeded;
+                case PvpEventKind.Forfeit: return NetMsgType.Duel.Forfeit;
+                default: return null;   // Ended 는 DuelEnded 메시지로 따로 보낸다
+            }
+        }
+
+        /// <summary>서버 사건을 viewer 기준 메시지로 바꾼다. 보내지 않는 사건(Ended)이면 null.</summary>
+        public static DuelEventMessage From(PvpEvent e, DuelSide viewer)
+        {
+            string kind = KindName(e.Kind);
+            if (kind == null) return null;
+            bool mine = e.Side == viewer;
+            var m = new DuelEventMessage
+            {
+                Kind = kind, Side = mine ? 0 : 1, MoveId = e.MoveId, Amount = e.Amount, Multiplier = e.Multiplier, Critical = e.Critical,
+                PartyIndex = mine ? e.PartyIndex : -1, TargetActive = e.TargetActive,
+            };
+            if (!mine && (e.Kind == PvpEventKind.SwitchIn || e.Kind == PvpEventKind.PotionUsed))
+                m.Monster = new DuelMonsterInfo { SpeciesId = e.SpeciesId, Level = e.Level, Hp = e.Hp, MaxHp = e.MaxHp };
+            return m;
+        }
     }
+
+    /// <summary>한 라운드(또는 교체 한 번)의 사건 묶음. 순서대로 재생한다.</summary>
+    public sealed class DuelEventsMessage { public List<DuelEventMessage> Events; }
 
     /// <summary>이긴 쪽은 SPEC "승리 시 경험치"(패배한 종족의 baseExp·레벨 기준) 그대로를, 진 쪽은 친선 대결이라
     /// 벌칙 없이 같은 공식을 상대 기준으로 계산한 40%를 참가 보상으로 받는다 — 그래서 양쪽 다 ExpGained/Growth 가 채워질 수 있다.</summary>
@@ -69,13 +136,20 @@ namespace MonsterAdventure.Net
         public const string Hello = "hello", Welcome = "welcome", Joined = "joined", Left = "left",
             Move = "move", Moved = "moved", ChallengeRequest = "challengeRequest", ChallengeOffer = "challengeOffer",
             ChallengeResponse = "challengeResponse", ChallengeResult = "challengeResult", Error = "error",
-            DuelStart = "duelStart", DuelAction = "duelAction", DuelEvent = "duelEvent", DuelEnded = "duelEnded",
+            DuelStart = "duelStart", DuelAction = "duelAction", DuelReplace = "duelReplace", DuelEvents = "duelEvents", DuelEnded = "duelEnded",
             UpdateAccount = "updateAccount";
-
-        /// <summary>DuelEventMessage.Kind 값(짧은 와이어 이름). Core 의 DuelEventKind 와 1:1 대응.</summary>
+        /// <summary>DuelEventMessage.Kind 값(짧은 와이어 이름). Core 의 PvpEventKind 와 1:1 대응(Ended 제외).</summary>
         public static class Duel
         {
-            public const string MoveUsed = "moveUsed", Missed = "missed", Damage = "damage", Fainted = "fainted";
+            public const string MoveUsed = "moveUsed", Missed = "missed", Damage = "damage", Fainted = "fainted",
+                SwitchOut = "switchOut", SwitchIn = "switchIn", PotionUsed = "potionUsed",
+                ReplacementNeeded = "replacementNeeded", Forfeit = "forfeit";
+        }
+
+        /// <summary>DuelActionMessage.Type 값.</summary>
+        public static class DuelActionType
+        {
+            public const string Move = "move", Potion = "potion", Switch = "switch", Forfeit = "forfeit";
         }
     }
 
