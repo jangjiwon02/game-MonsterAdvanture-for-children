@@ -60,8 +60,12 @@ namespace MonsterAdventure.Net
     }
 
     /// <summary>와이어 형식은 {"t":"<종류>","d":{...}} — 리플렉션/타입 이름을 신뢰하지 않고 화이트리스트로만 해석한다.</summary>
+    /// <summary>방 검색용 응답. Probe 를 보내면 서버가 이걸 한 번 돌려주고 연결을 닫는다(입장하지 않는다).</summary>
+    public sealed class RoomInfoMessage { public string Name; public int Players; }
+
     public static class NetMsgType
     {
+        public const string Probe = "probe", RoomInfo = "roomInfo";
         public const string Hello = "hello", Welcome = "welcome", Joined = "joined", Left = "left",
             Move = "move", Moved = "moved", ChallengeRequest = "challengeRequest", ChallengeOffer = "challengeOffer",
             ChallengeResponse = "challengeResponse", ChallengeResult = "challengeResult", Error = "error",

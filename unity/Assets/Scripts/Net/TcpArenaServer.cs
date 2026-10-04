@@ -42,6 +42,10 @@ namespace MonsterAdventure.Net
         Thread _acceptThread;
 
         public int Port { get; }
+        /// <summary>방 목록에 보이는 이름(호스트가 정한다).</summary>
+        public string RoomName { get; set; } = "대결 마당";
+        /// <summary>지금 입장해 있는 사람 수(방 목록·비콘에 보인다).</summary>
+        public int PlayerCount { get { lock (_lock) return _state.Players.Count; } }
         /// <summary>디버깅·테스트용 훅. 예외 문자열을 받는다(콘솔에 못 찍는 환경에서도 원인을 볼 수 있게).</summary>
         public event Action<string> Logged;
 
@@ -51,6 +55,9 @@ namespace MonsterAdventure.Net
             _state = new ArenaState(data, map);
             _accounts = accounts;
             _listener = new TcpListener(IPAddress.Any, port);
+            // 리눅스(안드로이드)에서는 직전 세션의 연결이 TIME_WAIT 로 남아 있으면 같은 포트로 바로 다시 방을 열 때
+            // "Address already in use" 로 실패한다. 주소 재사용을 켜서 방을 닫았다 바로 다시 열 수 있게 한다.
+            _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _listener.Start();
             Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         }
@@ -85,10 +92,18 @@ namespace MonsterAdventure.Net
             Conn conn = null;
             try
             {
-                // 첫 메시지는 반드시 Hello 여야 한다.
+                // 첫 메시지는 Hello(입장) 또는 Probe(방 검색 — 방 이름·인원만 알려 주고 바로 끊는다)여야 한다.
                 string helloJson = ReadOneBlocking(stream, reader, buf);
-                if (helloJson == null || !NetCodec.TryDecode(helloJson, out var type, out var d) || type != NetMsgType.Hello)
-                { Log("첫 메시지가 hello 가 아니다"); client.Close(); return; }
+                if (helloJson == null || !NetCodec.TryDecode(helloJson, out var type, out var d))
+                { Log("첫 메시지를 읽을 수 없다"); client.Close(); return; }
+                if (type == NetMsgType.Probe)
+                {
+                    var info = Frame.Encode(NetCodec.Encode(NetMsgType.RoomInfo, new RoomInfoMessage { Name = RoomName, Players = PlayerCount }));
+                    stream.Write(info, 0, info.Length);
+                    client.Close();
+                    return;
+                }
+                if (type != NetMsgType.Hello) { Log("첫 메시지가 hello 가 아니다"); client.Close(); return; }
                 var hello = d.ToObject<HelloMessage>();
 
                 // 이름으로 영구 저장 계정을 찾아 불러오거나(처음 보는 이름이면) 새로 만든다. 접속 시 출석 보너스도 여기서 준다.

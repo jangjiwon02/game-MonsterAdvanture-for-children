@@ -83,15 +83,13 @@ namespace MonsterAdventure.Net
             return new MoveOutcome(true, nx, ny, dir);
         }
 
-        static bool Adjacent(Trainer a, Trainer b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) == 1;
-
-        /// <summary>도전 신청. 안 되는 이유가 있으면 그 문구, 되면 null.</summary>
+        /// <summary>도전 신청. 안 되는 이유가 있으면 그 문구, 되면 null.
+        /// 같은 방에 있으면 어디에 있든 신청할 수 있다(월드 메뉴의 "대결 신청" 목록) — 예전엔 바로 옆 칸까지 걸어가야만 했다.</summary>
         public string RequestChallenge(int fromId, int targetId)
         {
             if (fromId == targetId) return "자기 자신에게는 도전할 수 없다!";
             var from = Get(fromId); var target = Get(targetId);
             if (from == null || target == null) return "상대를 찾을 수 없다!";
-            if (!Adjacent(from, target)) return "가까이 다가가야 도전할 수 있다!";
             if (_pendingChallenges.ContainsValue(fromId)) return "이미 다른 도전에 응답을 기다리는 중이다!";
             _pendingChallenges[targetId] = fromId;
             return null;
