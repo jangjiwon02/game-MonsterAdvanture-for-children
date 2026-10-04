@@ -188,13 +188,15 @@ namespace MonsterAdventure.Tests
         }
 
         [Test]
-        public void Challenge_RequiresAdjacency()
+        public void Challenge_WorksAcrossTheMap_NoNeedToWalkNextToEachOther()
         {
+            // 월드 메뉴의 "대결 신청" 목록으로 신청하는 흐름 — 거리와 상관없이 같은 방이면 된다.
             var a = New();
             var p1 = a.Join("철수", 0);
             var p2 = a.Join("영희", 2);
-            p2.X = p1.X + 2; p2.Y = p1.Y;   // 두 칸 떨어뜨려 확실히 비인접으로 만든다
-            Assert.AreEqual("가까이 다가가야 도전할 수 있다!", a.RequestChallenge(p1.Id, p2.Id));
+            p2.X = p1.X + 15; p2.Y = p1.Y + 8;
+            Assert.IsNull(a.RequestChallenge(p1.Id, p2.Id));
+            Assert.AreEqual((p1.Id, true), a.Respond(p2.Id, true));
         }
 
         [Test]
@@ -224,6 +226,91 @@ namespace MonsterAdventure.Tests
             var p1 = a.Join("철수", 0);
             Assert.AreEqual("자기 자신에게는 도전할 수 없다!", a.RequestChallenge(p1.Id, p1.Id));
             Assert.AreEqual("상대를 찾을 수 없다!", a.RequestChallenge(p1.Id, 999));
+        }
+    }
+
+    /// <summary>방 자동 검색(주소 직접 입력을 대체) — 비콘 규격, UDP 비콘 수신, 서버 Probe 응답을 진짜 루프백 소켓으로 검증.</summary>
+    public class LanDiscoveryTests
+    {
+        GameData _data; WorldMap _map;
+
+        [OneTimeSetUp]
+        public void Load()
+        {
+            _data = GameData.Parse(Resources.Load<TextAsset>("game-data").text);
+            _map = WorldMap.Generate();
+        }
+
+        [Test]
+        public void Beacon_RoundTrips_AndRejectsForeignOrBrokenPackets()
+        {
+            var bytes = LanDiscovery.EncodeBeacon("철수의 방\n끼어든줄", 7777, 3);
+            Assert.IsTrue(LanDiscovery.TryDecodeBeacon(bytes, bytes.Length, out var name, out int port, out int players));
+            Assert.AreEqual("철수의 방 끼어든줄", name, "이름의 줄바꿈은 공백으로 바뀌어 규격을 깨지 못한다");
+            Assert.AreEqual(7777, port);
+            Assert.AreEqual(3, players);
+
+            var junk = System.Text.Encoding.UTF8.GetBytes("HELLO\nworld\n1\n2");
+            Assert.IsFalse(LanDiscovery.TryDecodeBeacon(junk, junk.Length, out _, out _, out _), "다른 프로그램의 패킷은 무시");
+            var bad = System.Text.Encoding.UTF8.GetBytes("MAROOM1\n방\nabc\n1");
+            Assert.IsFalse(LanDiscovery.TryDecodeBeacon(bad, bad.Length, out _, out _, out _), "포트가 숫자가 아니면 무시");
+        }
+
+        static bool WaitFor(System.Func<bool> cond, int timeoutMs)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs) { if (cond()) return true; System.Threading.Thread.Sleep(50); }
+            return cond();
+        }
+
+        [Test]
+        public void UdpBeacon_IsHeardByScanner()
+        {
+            const int testPort = 47811;   // 실제 게임 포트(7778)와 겹쳐 다른 실행과 간섭하지 않게 다른 번호를 쓴다
+            using var scanner = new LanScanner(testPort);
+            scanner.StartListening();
+            using var beacon = new LanBeacon(() => "테스트방", 7777, () => 2, testPort,
+                new[] { System.Net.IPAddress.Loopback });
+            beacon.Start();
+
+            Assert.IsTrue(WaitFor(() => scanner.Rooms(System.TimeSpan.FromSeconds(5)).Count > 0, 4000), "비콘이 4초 안에 잡혀야 한다");
+            var room = scanner.Rooms(System.TimeSpan.FromSeconds(5)).First();
+            Assert.AreEqual("테스트방", room.Name);
+            Assert.AreEqual(7777, room.Port);
+            Assert.AreEqual(2, room.Players);
+            Assert.AreEqual("127.0.0.1", room.Address);
+        }
+
+        [Test]
+        public void UdpBroadcast_WithDefaultTargets_IsHeardOnThisMachine()
+        {
+            // 실제 폰이 쓰는 경로(전체 브로드캐스트 + 같은 대역 브로드캐스트)가 이 PC 의 진짜 네트워크에서도 도는지.
+            // LAN 에 연결돼 있지 않은 환경(CI 등)에서는 건너뛴다.
+            Assume.That(LanAddress.TryGetLocalIPv4(), Is.Not.Null, "이 환경에는 LAN 주소가 없다");
+            const int testPort = 47813;
+            using var scanner = new LanScanner(testPort);
+            scanner.StartListening();
+            using var beacon = new LanBeacon(() => "브로드캐스트방", 7777, () => 1, testPort);   // targetsOverride 없음 = 실제 대상
+            beacon.Start();
+
+            Assert.IsTrue(WaitFor(() => scanner.Rooms(System.TimeSpan.FromSeconds(5)).Count > 0, 5000),
+                "기본 브로드캐스트 대상(" + string.Join(", ", LanDiscovery.BroadcastTargets()) + ")으로 보낸 비콘이 잡혀야 한다");
+            Assert.AreEqual("브로드캐스트방", scanner.Rooms(System.TimeSpan.FromSeconds(5)).First().Name);
+        }
+
+        [Test]
+        public void TcpSweep_FindsRunningServer_WithoutJoiningIt()
+        {
+            using var server = new TcpArenaServer(_data, _map) { RoomName = "수색방" };
+            server.Start();
+            using var scanner = new LanScanner(47812, server.Port);
+            scanner.StartSweep(new[] { System.Net.IPAddress.Loopback, System.Net.IPAddress.Parse("127.0.0.2") }, server.Port);
+
+            Assert.IsTrue(WaitFor(() => scanner.Rooms(System.TimeSpan.FromSeconds(10)).Count > 0, 5000), "방을 찾아야 한다");
+            var room = scanner.Rooms(System.TimeSpan.FromSeconds(10)).First();
+            Assert.AreEqual("수색방", room.Name);
+            Assert.AreEqual(0, room.Players, "Probe 는 입장이 아니므로 인원이 늘지 않는다");
+            Assert.AreEqual(0, server.PlayerCount);
         }
     }
 

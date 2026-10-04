@@ -126,16 +126,19 @@ namespace MonsterAdventure
         void OnDestroy()
         {
             _client?.Dispose();
-            _hostedServer?.Dispose();
+            DisposeHosting();
         }
 
         /* ---------------------------------- 접속 흐름 ---------------------------------- */
 
         IEnumerator Lobby(CameraRig rig)
         {
-            yield return _ui.Choose(new[] { "서버 열기 (내가 호스트)", "서버 접속" },
-                new MenuOptions { Rect = new Rect(UiKit.VirtualWidth / 2f - 90, 130, 180, 68) });
-            bool hosting = _ui.Choice == 0;
+            // 최신 로컬 대결 방식: 호스트는 "방 만들기", 상대는 "방 찾기"로 같은 Wi-Fi 안의 방 목록에서 골라 들어간다.
+            // 주소를 한 자리씩 손으로 고르는 방식은 "주소로 접속(고급)" 으로만 남겨 둔다(검색이 막힌 공유기용).
+            yield return _ui.Choose(new[] { "방 만들기 (내가 호스트)", "방 찾기 (자동 검색)", "주소로 접속 (고급)" },
+                new MenuOptions { Rect = new Rect(UiKit.VirtualWidth / 2f - 100, 124, 200, 3 * 26 + 16), Prompt = "같은 Wi-Fi의 친구와 함께하기" });
+            int mode = _ui.Choice;          // 0 방 만들기, 1 방 찾기, 2 주소로 접속
+            bool hosting = mode == 0;
 
             string enteredName = null;
             do
@@ -154,52 +157,46 @@ namespace MonsterAdventure
 
             _localStarter = starter;
             string host = "127.0.0.1";
+            int port = DefaultPort;
             if (hosting)
             {
                 yield return StartServer();
-                // 다른 사람이 접속하려면 이 주소를 알아야 한다 — 월드에 들어간 뒤 구석의 작은 글씨로만 보여주면 놓치기 쉬워서,
-                // 입장 전에 대사로 먼저 크게 알려 준다.
+                if (_hostedServer == null)
+                {
+                    yield return _ui.Say($"방을 만들지 못했다: {_hostFailReason}\n앱을 완전히 종료했다가 다시 켜 보세요.\n메뉴로 돌아간다.");
+                    StartCoroutine(Lobby(rig));
+                    yield break;
+                }
+                port = _hostedServer.Port;
                 string hostLan = LanAddress.TryGetLocalIPv4();
                 yield return _ui.Say(hostLan != null
-                    ? $"서버를 열었다!\n다른 기기는 [서버 접속]에서 이 주소를 입력하세요:\n{hostLan}"
-                    : "서버를 열었지만 이 기기의 Wi-Fi 주소를 찾지 못했다.\n같은 Wi-Fi에 연결돼 있는지 확인해 주세요.");
+                    ? $"'{_hostedServer.RoomName}' 방을 열었다!\n친구는 [방 찾기]에서 이 방을 고르면 돼요.\n(직접 입력할 땐 주소: {hostLan})"
+                    : $"'{_hostedServer.RoomName}' 방을 열었다!\n이 기기의 Wi-Fi 주소를 찾지 못했지만 [방 찾기]로는 보일 수 있어요.\n같은 Wi-Fi에 연결돼 있는지 확인해 주세요.");
+            }
+            else if (mode == 1)
+            {
+                string pickedHost = null; int pickedPort = 0; bool wantsManual = false;
+                yield return DiscoverRoom((h, p) => { pickedHost = h; pickedPort = p; }, () => wantsManual = true);
+                if (wantsManual) { yield return PickAddressManually(h => pickedHost = h); pickedPort = DefaultPort; }
+                if (pickedHost == null) { StartCoroutine(Lobby(rig)); yield break; }   // "뒤로"
+                host = pickedHost; port = pickedPort;
             }
             else
             {
-                // 같은 Wi-Fi라면 주소의 앞 세 자리(예: 192.168.0)는 호스트와 같다 — 이 기기의 주소를 기본값으로 깔아 두면
-                // 마지막 한 자리만 고르면 된다. (127.0.0.1 은 "이 기기 자신"이라 다른 기기를 가리킬 수 없다.)
-                var octets = new[] { 192, 168, 0, 1 };
-                var ownLan = LanAddress.TryGetLocalIPv4();
-                if (ownLan != null)
-                {
-                    var parts = ownLan.Split('.');
-                    if (parts.Length == 4 && int.TryParse(parts[0], out int a0) && int.TryParse(parts[1], out int a1) && int.TryParse(parts[2], out int a2))
-                        octets = new[] { a0, a1, a2, 1 };
-                }
-                for (int i = 0; i < 4; i++)
-                {
-                    var items = new string[256];
-                    for (int v = 0; v < 256; v++) items[v] = v.ToString();
-                    yield return _ui.Choose(items, new MenuOptions
-                    {
-                        Rect = new Rect(160, 40, 160, 7 * 26 + 16), MaxRows = 7, Start = octets[i],
-                        Prompt = $"서버 주소 {string.Join(".", octets)} — {i + 1}번째 자리를 고르세요",
-                    });
-                    octets[i] = _ui.Choice;
-                }
-                host = string.Join(".", octets);
+                string manualHost = null;
+                yield return PickAddressManually(h => manualHost = h);
+                host = manualHost ?? host;
             }
 
             bool loopbackByMistake = !hosting && host.StartsWith("127.");
             if (loopbackByMistake)
                 yield return _ui.Say("주의: 127.x.x.x 는 '이 기기 자신'이라 다른 폰의 서버에 접속할 수 없어요.\n호스트 폰에 표시된 주소(예: 192.168.0.12)를 입력해야 해요.", 2200);
-            yield return _ui.Say($"{host}:{DefaultPort} 에 접속하는 중...", 400);
-            bool connected = TryConnect(host, out string failReason);
+            yield return _ui.Say($"{host}:{port} 에 접속하는 중...", 400);
+            bool connected = TryConnect(host, port, out string failReason);
             if (!connected)
             {
-                if (hosting) { _hostedServer?.Dispose(); _hostedServer = null; }
-                string hint = loopbackByMistake ? "\n(127.x 는 이 기기 자신이에요. 호스트 폰 주소를 입력해 보세요)"
-                    : !hosting ? "\n(호스트와 같은 Wi-Fi인지, 주소가 맞는지 확인하세요)" : "";
+                DisposeHosting();
+                string hint = loopbackByMistake ? "\n(127.x 는 이 기기 자신이에요. 호스트 폰 주소를 입력해 보세요)" : "";
                 yield return _ui.Say($"접속하지 못했다: {failReason}{hint}\n메뉴로 돌아간다.");
                 StartCoroutine(Lobby(rig));
                 yield break;
@@ -215,7 +212,7 @@ namespace MonsterAdventure
             if (welcome == null)
             {
                 yield return _ui.Say("서버 응답이 없다. 메뉴로 돌아간다.");
-                _client.Dispose(); _hostedServer?.Dispose(); _hostedServer = null;
+                _client.Dispose(); DisposeHosting();
                 StartCoroutine(Lobby(rig));
                 yield break;
             }
@@ -232,39 +229,136 @@ namespace MonsterAdventure
             if (hosting)
             {
                 string lan = LanAddress.TryGetLocalIPv4();
-                _statusLine = lan != null ? $"다른 사람 접속 주소: {lan}:{DefaultPort}" : $"이 기기 LAN 주소를 찾지 못했다 (포트 {DefaultPort})";
+                _statusLine = lan != null ? $"방 '{_hostedServer.RoomName}' 공개 중 · 주소 {lan}" : $"방 '{_hostedServer.RoomName}' 공개 중";
             }
             _localState = !string.IsNullOrEmpty(welcome.StateJson) ? SaveSerializer.FromJson(_data, welcome.StateJson) : null;
             BeginArenaSession();
-            yield return _ui.Say($"{J(_localName, "은", "는")} {host}:{DefaultPort} 에 접속했다!\n소지금 ₩{welcome.Money}", 900);
-            // "접속했는데 아무도 안 보인다"는 서로 다른 세션(호스트 IP를 잘못 입력 등)에 들어간 경우가 잦다 —
-            // 지금 같은 세션에 몇 명이 있는지 바로 알려주면 그 경우를 즉시 구분할 수 있다.
+            yield return _ui.Say($"{J(_localName, "은", "는")} 대결 마당에 입장했다!\n소지금 ₩{welcome.Money}", 900);
             yield return _ui.Say(welcome.Others.Count == 0
-                ? "지금 이 세션엔 나 혼자다. (다른 사람이 안 보이면 같은 서버에 접속했는지부터 확인!)"
-                : $"지금 같은 세션에 {welcome.Others.Count}명이 더 있다. 걸어서 찾아가 보자!", 1100);
+                ? "지금 이 방엔 나 혼자다. 친구가 [방 찾기]로 들어오면 X 메뉴의 '대결 신청'으로 겨뤄 보자!"
+                : $"지금 같은 방에 {welcome.Others.Count}명이 더 있다. X 메뉴의 '대결 신청'으로 겨뤄 보자!", 1400);
             if (welcome.BonusGranted)
                 yield return _ui.Say($"오늘의 출석 보너스 ₩{DailyBonus.Amount}을(를) 받았다!", 900);
         }
 
-        bool TryConnect(string host, out string reason)
+        /// <summary>같은 Wi-Fi 안의 방을 자동으로 찾아 목록으로 보여 준다. 고르면 onPick, '주소 직접 입력'이면 onManual,
+        /// '뒤로'면 아무것도 부르지 않고 끝난다.</summary>
+        IEnumerator DiscoverRoom(System.Action<string, int> onPick, System.Action onManual)
+        {
+            var scanner = new LanScanner();
+            try { scanner.StartListening(); }
+            catch (System.Exception e) { Debug.LogWarning("[Arena] UDP 방 검색을 못 열었다(직접 두드려 찾는 방식은 계속 동작): " + e.Message); }
+
+            for (;;)
+            {
+                scanner.StartSweep();
+                yield return _ui.Say("근처 방을 찾는 중...\n(호스트와 같은 Wi-Fi에 연결돼 있어야 해요)", 1800);
+                float until = Time.time + 2.5f;
+                while (scanner.SweepRunning && Time.time < until) yield return null;
+
+                var rooms = scanner.Rooms(System.TimeSpan.FromSeconds(8));
+                var labels = new List<string>();
+                foreach (var r in rooms) labels.Add($"{r.Name}  ({r.Players}명)  {r.Address}");
+                labels.Add("다시 찾기"); labels.Add("주소 직접 입력"); labels.Add("뒤로");
+
+                yield return _ui.Choose(labels, new MenuOptions
+                {
+                    Rect = new Rect(UiKit.VirtualWidth / 2f - 170, 36, 340, Mathf.Min(labels.Count, 7) * 26 + 16), MaxRows = 7, Full = true,
+                    Prompt = rooms.Count > 0
+                        ? "들어갈 방을 고르세요"
+                        : "근처에서 방을 찾지 못했어요.\n호스트가 [방 만들기]를 했는지, 같은 Wi-Fi인지 확인하세요.\n(공유기가 기기끼리 통신을 막으면 한 폰의 핫스팟을 쓰세요)",
+                });
+                int c = _ui.Choice;
+                if (c >= 0 && c < rooms.Count) { onPick(rooms[c].Address, rooms[c].Port); break; }
+                if (c == rooms.Count) continue;                       // 다시 찾기
+                if (c == rooms.Count + 1) { onManual(); break; }      // 주소 직접 입력
+                break;                                                // 뒤로
+            }
+            scanner.Dispose();
+        }
+
+        /// <summary>(고급) 주소를 네 자리로 나눠 하나씩 고른다. 기본값은 이 기기와 같은 대역.</summary>
+        IEnumerator PickAddressManually(System.Action<string> onPick)
+        {
+            // 같은 Wi-Fi라면 주소의 앞 세 자리(예: 192.168.0)는 호스트와 같다 — 이 기기의 주소를 기본값으로 깔아 두면
+            // 마지막 한 자리만 고르면 된다. (127.0.0.1 은 "이 기기 자신"이라 다른 기기를 가리킬 수 없다.)
+            var octets = new[] { 192, 168, 0, 1 };
+            var ownLan = LanAddress.TryGetLocalIPv4();
+            if (ownLan != null)
+            {
+                var parts = ownLan.Split('.');
+                if (parts.Length == 4 && int.TryParse(parts[0], out int a0) && int.TryParse(parts[1], out int a1) && int.TryParse(parts[2], out int a2))
+                    octets = new[] { a0, a1, a2, 1 };
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                var items = new string[256];
+                for (int v = 0; v < 256; v++) items[v] = v.ToString();
+                yield return _ui.Choose(items, new MenuOptions
+                {
+                    Rect = new Rect(160, 40, 160, 7 * 26 + 16), MaxRows = 7, Start = octets[i],
+                    Prompt = $"서버 주소 {string.Join(".", octets)} — {i + 1}번째 자리를 고르세요",
+                });
+                octets[i] = _ui.Choice;
+            }
+            onPick(string.Join(".", octets));
+        }
+
+        bool TryConnect(string host, int port, out string reason)
         {
             reason = null;
             try
             {
                 _client = new TcpArenaClient();
-                _client.Connect(host, DefaultPort, _localName, _localStarter);
+                _client.Connect(host, port, _localName, _localStarter);
                 return true;
             }
-            catch (System.Exception e) { reason = e.Message; return false; }
+            catch (System.Exception e) { reason = ExplainConnectFailure(e); return false; }
         }
+
+        /// <summary>소켓 예외 문구를 "그래서 뭘 하면 되는지"가 보이는 말로 바꾼다.</summary>
+        static string ExplainConnectFailure(System.Exception e)
+        {
+            if (e is System.TimeoutException)
+                return "응답이 없다(시간 초과).\n같은 Wi-Fi가 아니거나, 공유기가 기기끼리 통신을 막고 있을 수 있어요.\n한 폰의 핫스팟을 켜고 다른 폰이 거기에 연결해 보세요.";
+            if (e is System.Net.Sockets.SocketException se && se.SocketErrorCode == System.Net.Sockets.SocketError.ConnectionRefused)
+                return "방이 열려 있지 않아요(호스트가 방을 닫았을 수 있어요).";
+            return e.Message;
+        }
+
+        string _hostFailReason;
+        LanBeacon _beacon;
 
         IEnumerator StartServer()
         {
+            _hostFailReason = null;
             var accounts = new TrainerAccountStore(System.IO.Path.Combine(Application.persistentDataPath, "trainer_accounts"));
-            _hostedServer = new TcpArenaServer(_data, _map, accounts, DefaultPort);
-            _hostedServer.Logged += msg => Debug.Log("[ArenaServer] " + msg);
-            _hostedServer.Start();
+            try
+            {
+                _hostedServer = new TcpArenaServer(_data, _map, accounts, DefaultPort) { RoomName = $"{_localName}의 방" };
+                _hostedServer.Logged += msg => Debug.Log("[ArenaServer] " + msg);
+                _hostedServer.Start();
+            }
+            catch (System.Exception e)
+            {
+                // 예전엔 여기서 예외가 나면(포트가 아직 쓰이는 중 등) 코루틴이 조용히 죽어서 화면이 멈춘 것처럼 보였다.
+                _hostFailReason = e is System.Net.Sockets.SocketException ? "이 기기의 7777 포트를 쓸 수 없다" : e.Message;
+                _hostedServer?.Dispose(); _hostedServer = null;
+                yield break;
+            }
+            try
+            {
+                _beacon = new LanBeacon(() => _hostedServer.RoomName, _hostedServer.Port, () => _hostedServer.PlayerCount);
+                _beacon.Start();
+            }
+            catch (System.Exception e) { Debug.LogWarning("[Arena] 방 알림(UDP)을 못 열었다 — 직접 검색은 계속 된다: " + e.Message); _beacon = null; }
             yield return null;
+        }
+
+        void DisposeHosting()
+        {
+            _beacon?.Dispose(); _beacon = null;
+            _hostedServer?.Dispose(); _hostedServer = null;
         }
 
         /* ---------------------------------- 진행 중 ---------------------------------- */
@@ -457,19 +551,48 @@ namespace MonsterAdventure
             BeginArenaScene();
             for (;;)
             {
-                var items = new[] { "몬스터", "가방", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "게임 종료", "닫기" };
+                var items = new[] { "대결 신청", "몬스터", "가방", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "게임 종료", "닫기" };
                 yield return _ui.Choose(items,
                     new MenuOptions { Rect = new Rect(UiKit.VirtualWidth - 146, 8, 138, items.Length * 26 + 16), Cancel = true });
                 int i = _ui.Choice;
-                if (i == -1 || i == 6) break;
-                if (i == 0) yield return ArenaPartyMenu();
-                else if (i == 1) yield return ArenaBagMenu();
-                else if (i == 2) yield return _ui.DexScreen(_localState);
-                else if (i == 3) { SyncState(); yield return _ui.Say("저장했다!", 500); }
-                else if (i == 4) { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
+                if (i == -1 || i == 7) break;
+                if (i == 0) { yield return ArenaChallengeMenu(); if (_challengeSentFromMenu) break; }
+                else if (i == 1) yield return ArenaPartyMenu();
+                else if (i == 2) yield return ArenaBagMenu();
+                else if (i == 3) yield return _ui.DexScreen(_localState);
+                else if (i == 4) { SyncState(); yield return _ui.Say("저장했다!", 500); }
+                else if (i == 5) { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
                 else yield return _ui.ConfirmQuit(() => { EndArenaSession(); });
             }
             EndArenaScene();
+        }
+
+        bool _challengeSentFromMenu;
+
+        /// <summary>같은 방의 사람 목록에서 골라 대결을 신청한다(바로 옆까지 걸어가지 않아도 된다).
+        /// 신청을 보냈으면 _challengeSentFromMenu 가 true — 호출한 메뉴가 닫혀서 상대 응답을 받을 수 있게 한다.</summary>
+        IEnumerator ArenaChallengeMenu()
+        {
+            _challengeSentFromMenu = false;
+            if (_avatars.Count == 0)
+            {
+                yield return _ui.Say("지금 이 방엔 나 혼자다.\n친구가 [방 찾기]로 들어오면 여기서 대결을 신청할 수 있어요.");
+                yield break;
+            }
+            var ids = new List<int>(_avatars.Keys);
+            ids.Sort();
+            var labels = new List<string>();
+            foreach (int id in ids) labels.Add(_avatars[id].DisplayName);
+            labels.Add("취소");
+            yield return _ui.Choose(labels, new MenuOptions
+            {
+                Rect = new Rect(UiKit.VirtualWidth / 2f - 90, 40, 180, Mathf.Min(labels.Count, 7) * 26 + 16), MaxRows = 7, Cancel = true,
+                Prompt = "누구에게 대결을 신청할까요?",
+            });
+            int c = _ui.Choice;
+            if (c < 0 || c >= ids.Count) yield break;
+            _challengeSentFromMenu = true;
+            yield return SendChallengeTo(ids[c]);
         }
 
         IEnumerator ArenaPartyMenu()
