@@ -186,10 +186,23 @@ namespace MonsterAdventure
             bool loopbackByMistake = !hosting && host.StartsWith("127.");
             if (loopbackByMistake)
                 yield return _ui.Say("주의: 127.x.x.x 는 '이 기기 자신'이라 다른 폰의 서버에 접속할 수 없어요.\n호스트 폰에 표시된 주소(예: 192.168.0.12)를 입력해야 해요.", 2200);
+            // 연결(재시도 포함 최대 수 초)은 백그라운드에서 한다 — 메인 스레드를 막으면 화면이 얼고 안드로이드가 "응답 없음"으로 본다.
+            _client = new TcpArenaClient();
+            var connecting = _client;
+            string failReason = null;
+            bool connected = false, connectDone = false;
+            string connName = _localName, connJson = _localSaveJson; int connStarter = _localStarter;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try { connecting.Connect(host, port, connName, connStarter, 2000, connJson); connected = true; }
+                catch (System.Exception e) { failReason = ExplainConnectFailure(e); }
+                finally { connectDone = true; }
+            });
             yield return _ui.Say($"{host}:{port} 에 접속하는 중...", 400);
-            bool connected = TryConnect(host, port, out string failReason);
+            while (!connectDone) yield return null;
             if (!connected)
             {
+                connecting.Dispose(); _client = null;
                 DisposeHosting();
                 string hint = loopbackByMistake ? "\n(127.x 는 이 기기 자신이에요. 호스트 폰 주소를 입력해 보세요)" : "";
                 yield return _ui.Say($"접속하지 못했다: {failReason}{hint}\n메뉴로 돌아간다.");
@@ -310,18 +323,6 @@ namespace MonsterAdventure
             var state = PlayerState.NewGame(_data, PlayerState.Starters[_ui.Choice]);
             state.Party[0].RollIndividualValues(_data);
             onDone(state);
-        }
-
-        bool TryConnect(string host, int port, out string reason)
-        {
-            reason = null;
-            try
-            {
-                _client = new TcpArenaClient();
-                _client.Connect(host, port, _localName, _localStarter, 4000, _localSaveJson);
-                return true;
-            }
-            catch (System.Exception e) { reason = ExplainConnectFailure(e); return false; }
         }
 
         /// <summary>소켓 예외 문구를 "그래서 뭘 하면 되는지"가 보이는 말로 바꾼다.</summary>
