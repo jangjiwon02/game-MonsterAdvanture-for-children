@@ -9,9 +9,9 @@ using static MonsterAdventure.Core.Korean;
 namespace MonsterAdventure
 {
     /// <summary>
-    /// LAN 대결 마당(같은 충주 지도를 여럿이서 함께 걷고, 마주치면 도전). 단일 플레이 저장(PlayerState)과는
-    /// 완전히 분리된 모드다 — 이 모드의 진행은 저장 파일에 손대지 않는다. 트레이너 이름별 영구 계정(서버 쪽 파일)과
-    /// 접속 시 출석 보너스는 서버(TcpArenaServer)가 처리하고, 도전이 성사되면 1:1 대결(DuelController)로 이어진다.
+    /// LAN 대결 마당(같은 충주 지도를 여럿이서 함께 걷고, 마주치면 도전). 일반 게임과 같은 저장(SaveStore)·같은 이름을 쓴다 —
+    /// 혼자 키운 몬스터·레벨 그대로 들어와 겨루고, 대결 성장과 상점·가방 변화는 다시 저장에 돌아온다. 접속 시 출석 보너스는
+    /// 서버(TcpArenaServer)가 처리하고, 도전이 성사되면 1:1 대결로 이어진다.
     /// </summary>
     public sealed class ArenaController : MonoBehaviour
     {
@@ -37,10 +37,9 @@ namespace MonsterAdventure
         WelcomeMessage _pendingWelcome; // Update() 가 큐에서 받아 두면 Lobby() 코루틴이 가져간다(소비자를 하나로 유지)
         DuelController _duel;          // 대결 중이면 non-null — Update() 의 이동·도전 입력을 잠그는 데도 쓴다
 
-        // 원격 접속 기록(TelemetryClient). LAN 모드는 단일 플레이 명단과 별개로 직접 타이핑한 트레이너 이름을 쓰므로,
-        // 명단의 실제 학생 이름과 같은 줄에 덮어쓰지 않도록 "(LAN)" 을 붙여 구분한다.
+        // 원격 접속 기록(TelemetryClient). 일반 게임과 같은 이름(= 같은 사람)으로 같은 줄에 이어서 올라간다.
         const float HeartbeatSeconds = 60f;
-        string TelemetryName => _localName + "(LAN)";
+        string TelemetryName => _localName;
         System.DateTime _sessionStartUtc;
         bool _sessionOpen;
         Coroutine _heartbeat;
@@ -140,22 +139,18 @@ namespace MonsterAdventure
             int mode = _ui.Choice;          // 0 방 만들기, 1 방 찾기, 2 주소로 접속
             bool hosting = mode == 0;
 
-            string enteredName = null;
-            do
+            // 일반 게임과 같은 저장을 이어 쓴다. 저장이 없으면(LAN부터 시작한 사람) 여기서 새로 시작해 저장해 둔다.
+            var save = SaveStore.TryLoad(_data);
+            if (save == null) yield return NewSave(state => save = state);
+            if (string.IsNullOrEmpty(save.PlayerName))
             {
-                yield return _ui.EnterText("이름을 입력하세요 (트레이너 이름)", 10, n => enteredName = n?.Trim());
-                if (string.IsNullOrEmpty(enteredName)) yield return _ui.Say("이름을 입력해야 한다!");
-            } while (string.IsNullOrEmpty(enteredName));
-            _localName = enteredName;
+                yield return PlayerIdentity.EnsureName(_ui, save);
+                SaveStore.Save(save);
+            }
+            _localName = save.PlayerName;
+            _localStarter = save.Party[0].SpeciesId;
+            _localSaveJson = SaveSerializer.ToJson(save);
 
-            // 이 이름으로 처음 접속하는 것이면 여기서 고른 파트너로 새 계정을 만든다. 이미 있는 트레이너라면
-            // 서버가 이 선택을 무시하고 저장된 계정을 그대로 불러온다(그래도 매번 물어보는 건 약간 어색한 부분 —
-            // 계정 존재 여부를 먼저 물어보는 2단계 접속으로 다음에 다듬을 수 있다).
-            yield return _ui.Choose(new[] { "불꼬마", "물방울이", "새싹이" },
-                new MenuOptions { Rect = new Rect(UiKit.VirtualWidth / 2f - 70, 130, 140, 68), Prompt = "(처음이라면) 파트너를 골라 주세요" });
-            int starter = PlayerState.Starters[_ui.Choice];
-
-            _localStarter = starter;
             string host = "127.0.0.1";
             int port = DefaultPort;
             if (hosting)
@@ -219,7 +214,7 @@ namespace MonsterAdventure
 
             _localId = welcome.Id;
             _localPlayer = new GameObject("Player").AddComponent<PlayerController>();
-            _localPlayer.Init(_map, welcome.X, welcome.Y);
+            _localPlayer.Init(_map, welcome.X, welcome.Y, welcome.Color);
             rig.Target = _localPlayer.transform;
             _localPlayer.Stepped += OnLocalStepped;
 
@@ -232,6 +227,7 @@ namespace MonsterAdventure
                 _statusLine = lan != null ? $"방 '{_hostedServer.RoomName}' 공개 중 · 주소 {lan}" : $"방 '{_hostedServer.RoomName}' 공개 중";
             }
             _localState = !string.IsNullOrEmpty(welcome.StateJson) ? SaveSerializer.FromJson(_data, welcome.StateJson) : null;
+            if (_localState != null) SaveStore.Save(_localState);   // 출석 보너스가 반영된 계정을 일반 게임 저장에도 남긴다
             BeginArenaSession();
             yield return _ui.Say($"{J(_localName, "은", "는")} 대결 마당에 입장했다!\n소지금 ₩{welcome.Money}", 900);
             yield return _ui.Say(welcome.Others.Count == 0
@@ -304,13 +300,25 @@ namespace MonsterAdventure
             onPick(string.Join(".", octets));
         }
 
+        string _localSaveJson;   // 접속할 때 서버에 보낼 내 저장(일반 게임에서 키운 그대로)
+
+        /// <summary>저장이 하나도 없을 때의 간단한 새 시작: 파트너만 고른다(소개 대사는 일반 게임의 새 게임에서).</summary>
+        IEnumerator NewSave(System.Action<PlayerState> onDone)
+        {
+            yield return _ui.Choose(new[] { "불꼬마", "물방울이", "새싹이" },
+                new MenuOptions { Rect = new Rect(UiKit.VirtualWidth / 2f - 70, 130, 140, 68), Prompt = "저장된 게임이 없어요.\n함께할 파트너를 골라 주세요" });
+            var state = PlayerState.NewGame(_data, PlayerState.Starters[_ui.Choice]);
+            state.Party[0].RollIndividualValues(_data);
+            onDone(state);
+        }
+
         bool TryConnect(string host, int port, out string reason)
         {
             reason = null;
             try
             {
                 _client = new TcpArenaClient();
-                _client.Connect(host, port, _localName, _localStarter);
+                _client.Connect(host, port, _localName, _localStarter, 4000, _localSaveJson);
                 return true;
             }
             catch (System.Exception e) { reason = ExplainConnectFailure(e); return false; }
@@ -411,13 +419,16 @@ namespace MonsterAdventure
                     var m = d.ToObject<MovedMessage>();
                     if (m.Id == _localId)
                     {
-                        // 서버 판정이 예측과 다르면(다른 플레이어와 동시에 같은 칸을 노린 경우 등) 위치를 맞춘다.
-                        if (m.X != _localPlayer.TileX || m.Y != _localPlayer.TileY)
+                        // 서버는 내가 보낸 이동마다 결과를 하나씩 돌려준다. 걸어가는 중에는 클라이언트가 이미 다음 칸을
+                        // 예측해서 서버 답보다 앞서 있으므로, 도착한 답이 "지금 위치"와 다르다고 바로 되돌리면 한 칸씩
+                        // 끌려가는 렉이 생긴다. 보낸 이동에 대한 답을 전부 받고 멈춰 있을 때만, 서버 판정과 다르면
+                        // (다른 플레이어와 같은 칸을 노린 경우 등) 위치를 맞춘다.
+                        if (_movesInFlight > 0) _movesInFlight--;
+                        if (_movesInFlight == 0 && !_localPlayer.IsMoving && (m.X != _localPlayer.TileX || m.Y != _localPlayer.TileY))
                             _localPlayer.Teleport(m.X, m.Y, (Direction)m.Dir);
                     }
                     else if (_avatars.TryGetValue(m.Id, out var av))
                     {
-                        Debug.Log($"[Arena] #{m.Id} 이동 -> ({m.X},{m.Y})");
                         av.MoveTo(m.X, m.Y, (Direction)m.Dir);
                     }
                     break;
@@ -450,6 +461,13 @@ namespace MonsterAdventure
                     StartCoroutine(RunDuel());
                     break;
                 }
+                case NetMsgType.AccountUpdated:
+                {
+                    // 대결 성장(경험치·레벨업·진화)·상금이 서버에서 계산돼 온다 — 내 계정에 반영하고 일반 게임 저장에도 남긴다.
+                    var updated = SaveSerializer.FromJson(_data, d.ToObject<AccountUpdatedMessage>().StateJson);
+                    if (updated != null) { _localState = updated; SaveStore.Save(_localState); }
+                    break;
+                }
                 case NetMsgType.DuelEvent:
                 case NetMsgType.DuelEnded:
                     _duel?.Feed(type, d);
@@ -471,13 +489,15 @@ namespace MonsterAdventure
             var go = new GameObject($"Avatar #{info.Id} {info.Name}");
             go.transform.SetParent(_avatarRoot, false);
             var av = go.AddComponent<ArenaAvatar>();
-            av.Init(info.Id, info.Name, info.X, info.Y, (Direction)info.Dir);
+            av.Init(info.Id, info.Name, info.X, info.Y, (Direction)info.Dir, info.Color);
             _avatars[info.Id] = av;
         }
 
+        int _movesInFlight;   // 서버에 보냈지만 아직 답(Moved)을 못 받은 내 이동 수
+
         void OnLocalStepped(int x, int y)
         {
-            Debug.Log($"[Arena] 내 이동 -> ({x},{y})");
+            _movesInFlight++;
             _client.SendMove((NetDirection)_localPlayer.Facing);
             if (_busy || _localState == null) return;
             var tile = _map[x, y];
@@ -542,6 +562,7 @@ namespace MonsterAdventure
         void SyncState()
         {
             if (_localState == null) return;
+            SaveStore.Save(_localState);
             _client.SendUpdateAccount(SaveSerializer.ToJson(_localState));
         }
 

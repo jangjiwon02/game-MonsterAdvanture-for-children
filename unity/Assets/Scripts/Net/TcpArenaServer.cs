@@ -78,6 +78,7 @@ namespace MonsterAdventure.Net
                 TcpClient client;
                 try { client = _listener.AcceptTcpClient(); }
                 catch (Exception) { return; } // 리스너가 Stop() 된 경우
+                client.NoDelay = true;   // 이동처럼 작은 메시지가 Nagle 알고리즘 때문에 수십~수백 ms 묶여서 늦게 가지 않게
 
                 var thread = new Thread(() => HandleClient(client)) { IsBackground = true, Name = "ArenaServer.Client" };
                 thread.Start();
@@ -110,7 +111,19 @@ namespace MonsterAdventure.Net
                 PlayerState account = null;
                 bool bonusGranted = false;
                 int avatarSpeciesId = hello.SpeciesId;
-                if (_accounts != null)
+                if (!string.IsNullOrEmpty(hello.StateJson))
+                {
+                    // 일반 게임 저장을 그대로 들고 들어온 경우: 그 몬스터·레벨·가방이 이 사람의 계정이다(진행상황 통일).
+                    // 형식이 이상하면(null) 아래의 서버 저장 계정 경로로 넘어간다.
+                    account = SaveSerializer.FromJson(_data, hello.StateJson);
+                    if (account != null)
+                    {
+                        bonusGranted = DailyBonus.TryGrant(account, DateTime.UtcNow);
+                        _accounts?.Save(hello.Name, account);
+                        avatarSpeciesId = account.Party[0].SpeciesId;
+                    }
+                }
+                if (account == null && _accounts != null)
                 {
                     account = _accounts.Exists(hello.Name) ? _accounts.Load(_data, hello.Name) : null;
                     if (account == null)
@@ -139,6 +152,7 @@ namespace MonsterAdventure.Net
                     Id = me.Id, X = me.X, Y = me.Y, Dir = (int)me.Dir, Others = others,
                     Money = account?.Money ?? 0, BonusGranted = bonusGranted,
                     StateJson = account != null ? SaveSerializer.ToJson(account) : null,
+                    Color = me.Color,
                 });
                 Broadcast(NetMsgType.Joined, new JoinedMessage { Info = me.ToInfo() }, exceptId: me.Id);
                 Log($"#{me.Id} {me.Name} 입장" + (bonusGranted ? " (출석 보너스 지급)" : ""));
@@ -347,8 +361,17 @@ namespace MonsterAdventure.Net
                         if (_accounts != null && loserTrainer != null) _accounts.Save(loserTrainer.Name, loserAccount);
                     }
                 }
+                NotifyAccount(winnerId); NotifyAccount(loserId);   // 대결로 달라진 레벨·경험치를 두 사람의 일반 게임 저장에도 반영시킨다
                 return (winExp, winGrowth, loseExp, loseGrowth);
             }
+        }
+
+        /// <summary>서버가 계정을 바꾼 뒤 그 사람에게 최신 계정을 돌려 보낸다(클라이언트가 자기 저장 파일에 쓴다).</summary>
+        void NotifyAccount(int playerId)
+        {
+            string json;
+            lock (_lock) json = _accountsByPlayerId.TryGetValue(playerId, out var a) ? SaveSerializer.ToJson(a) : null;
+            if (json != null) SendTo(playerId, NetMsgType.AccountUpdated, new AccountUpdatedMessage { StateJson = json });
         }
 
         static string DuelKindName(DuelEventKind k) => k switch

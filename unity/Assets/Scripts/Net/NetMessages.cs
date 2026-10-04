@@ -9,12 +9,18 @@ namespace MonsterAdventure.Net
     public sealed class TrainerInfo
     {
         public int Id; public string Name; public int SpeciesId; public int X; public int Y; public int Dir;
+        /// <summary>겉모습 색 번호(PlayerArt 팔레트). 접속자마다 서버가 겹치지 않게 정해 준다.</summary>
+        public int Color;
     }
 
-    public sealed class HelloMessage { public string Name; public int SpeciesId; }
+    /// <summary>StateJson: 일반 게임 저장(SaveSerializer.ToJson)을 그대로 들고 들어온다 — 있으면 서버는 그걸 이 사람의 계정으로 쓴다
+    /// (일반 게임에서 키운 몬스터·레벨로 그대로 대결). 없으면(전용 서버 등) 예전처럼 서버가 이름으로 저장 계정을 찾는다.</summary>
+    public sealed class HelloMessage { public string Name; public int SpeciesId; public string StateJson; }
     /// <summary>StateJson 은 SaveSerializer.ToJson 그대로(파티·가방·소지금 등) — 월드 메뉴(가방·몬스터)·상점·센터가
     /// 이걸로 로컬에 계정을 그대로 들고 있다가, 바뀌면 <see cref="UpdateAccountMessage"/> 로 되돌려 보낸다.</summary>
-    public sealed class WelcomeMessage { public int Id; public int X; public int Y; public int Dir; public List<TrainerInfo> Others; public int Money; public bool BonusGranted; public string StateJson; }
+    public sealed class WelcomeMessage { public int Id; public int X; public int Y; public int Dir; public List<TrainerInfo> Others; public int Money; public bool BonusGranted; public string StateJson; public int Color; }
+    /// <summary>서버가 계정을 바꾼 뒤(대결 경험치·레벨업 등) 최신 계정을 되돌려 보낸다 — 클라이언트는 이걸 일반 게임 저장 파일에 그대로 쓴다.</summary>
+    public sealed class AccountUpdatedMessage { public string StateJson; }
     /// <summary>클라이언트가 자기 계정(가방·파티·소지금)을 바꿨을 때(상점 구매, 상처약 사용 등) 서버에 되돌려 보낸다.
     /// 이동처럼 클라이언트를 신뢰하는 모델이지만, 서버는 그래도 항상 SaveSerializer.FromJson 으로 검증한다.</summary>
     public sealed class UpdateAccountMessage { public string StateJson; }
@@ -65,7 +71,7 @@ namespace MonsterAdventure.Net
 
     public static class NetMsgType
     {
-        public const string Probe = "probe", RoomInfo = "roomInfo";
+        public const string Probe = "probe", RoomInfo = "roomInfo", AccountUpdated = "accountUpdated";
         public const string Hello = "hello", Welcome = "welcome", Joined = "joined", Left = "left",
             Move = "move", Moved = "moved", ChallengeRequest = "challengeRequest", ChallengeOffer = "challengeOffer",
             ChallengeResponse = "challengeResponse", ChallengeResult = "challengeResult", Error = "error",
