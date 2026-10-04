@@ -25,8 +25,8 @@ namespace MonsterAdventure.Net
         sealed class DuelRuntime
         {
             public int AId, BId;
-            public Duel Duel;
-            public string PendingAMove, PendingBMove;
+            public PvpBattle Duel;
+            public BattleAction PendingA, PendingB;
         }
 
         readonly ArenaState _state;
@@ -78,6 +78,7 @@ namespace MonsterAdventure.Net
                 TcpClient client;
                 try { client = _listener.AcceptTcpClient(); }
                 catch (Exception) { return; } // 리스너가 Stop() 된 경우
+                client.NoDelay = true;   // 이동처럼 작은 메시지가 Nagle 알고리즘 때문에 수십~수백 ms 묶여서 늦게 가지 않게
 
                 var thread = new Thread(() => HandleClient(client)) { IsBackground = true, Name = "ArenaServer.Client" };
                 thread.Start();
@@ -110,7 +111,19 @@ namespace MonsterAdventure.Net
                 PlayerState account = null;
                 bool bonusGranted = false;
                 int avatarSpeciesId = hello.SpeciesId;
-                if (_accounts != null)
+                if (!string.IsNullOrEmpty(hello.StateJson))
+                {
+                    // 일반 게임 저장을 그대로 들고 들어온 경우: 그 몬스터·레벨·가방이 이 사람의 계정이다(진행상황 통일).
+                    // 형식이 이상하면(null) 아래의 서버 저장 계정 경로로 넘어간다.
+                    account = SaveSerializer.FromJson(_data, hello.StateJson);
+                    if (account != null)
+                    {
+                        bonusGranted = DailyBonus.TryGrant(account, DateTime.UtcNow);
+                        _accounts?.Save(hello.Name, account);
+                        avatarSpeciesId = account.Party[0].SpeciesId;
+                    }
+                }
+                if (account == null && _accounts != null)
                 {
                     account = _accounts.Exists(hello.Name) ? _accounts.Load(_data, hello.Name) : null;
                     if (account == null)
@@ -139,6 +152,7 @@ namespace MonsterAdventure.Net
                     Id = me.Id, X = me.X, Y = me.Y, Dir = (int)me.Dir, Others = others,
                     Money = account?.Money ?? 0, BonusGranted = bonusGranted,
                     StateJson = account != null ? SaveSerializer.ToJson(account) : null,
+                    Color = me.Color,
                 });
                 Broadcast(NetMsgType.Joined, new JoinedMessage { Info = me.ToInfo() }, exceptId: me.Id);
                 Log($"#{me.Id} {me.Name} 입장" + (bonusGranted ? " (출석 보너스 지급)" : ""));
@@ -215,12 +229,22 @@ namespace MonsterAdventure.Net
                     break;
                 }
                 case NetMsgType.DuelAction:
-                    HandleDuelAction(fromId, d.ToObject<DuelActionMessage>());
+                    HandleDuelAction(fromId, TryParse<DuelActionMessage>(d));
+                    break;
+                case NetMsgType.DuelReplace:
+                    HandleDuelReplace(fromId, TryParse<DuelReplaceMessage>(d));
                     break;
                 case NetMsgType.UpdateAccount:
                     HandleUpdateAccount(fromId, d.ToObject<UpdateAccountMessage>());
                     break;
             }
+        }
+
+        /// <summary>잘못된 모양의 메시지는 예외 대신 null — 연결을 끊지 않고 그 메시지만 버린다.</summary>
+        static T TryParse<T>(JObject d) where T : class
+        {
+            try { return d.ToObject<T>(); }
+            catch (Exception) { return null; }
         }
 
         /// <summary>월드 메뉴(가방·상점·센터 등)에서 클라이언트가 바꾼 자기 계정을 반영·저장한다.
@@ -240,23 +264,31 @@ namespace MonsterAdventure.Net
             if (name != null) _accounts.Save(name, state);
         }
 
-        /* ---------------------------------- 1:1 대결 ---------------------------------- */
+        /* ---------------------------------- 파티 대결 ---------------------------------- */
 
         const int DuelFallbackLevel = 10;   // 계정 정보가 없을 때(테스트 등)만 쓰는 기본 레벨
 
         static DuelMonsterInfo Info(Monster m) =>
-            new DuelMonsterInfo { SpeciesId = m.SpeciesId, Level = m.Level, Hp = m.Hp, MaxHp = m.MaxHp, Moves = new List<string>(m.Moves) };
+            new DuelMonsterInfo { SpeciesId = m.SpeciesId, Level = m.Level, Exp = m.Exp, Hp = m.Hp, MaxHp = m.MaxHp, Moves = new List<string>(m.Moves) };
 
-        /// <summary>친선 대결: 계정에 저장된 진짜 레벨·종족(선두 몬스터)을 쓰되, 매번 HP 는 가득 채운 새 사본으로 붙는다
+        /// <summary>상대에게 보여 주는 모습 — 기술·경험치는 숨긴다.</summary>
+        static DuelMonsterInfo PublicInfo(Monster m) =>
+            new DuelMonsterInfo { SpeciesId = m.SpeciesId, Level = m.Level, Hp = m.Hp, MaxHp = m.MaxHp };
+
+        /// <summary>친선 대결: 계정에 저장된 진짜 파티(레벨·개체값·노력치·성격 그대로)를 쓰되, 매번 HP 는 가득 채운 새 사본으로 붙는다
         /// — 진 쪽 몬스터가 실제로 다치지는 않는다(치료소가 없는 대결 마당의 임시 규칙).</summary>
-        Monster BuildDuelMonster(int playerId)
+        List<Monster> BuildDuelParty(int playerId)
         {
             lock (_lock)
             {
                 if (_accountsByPlayerId.TryGetValue(playerId, out var account) && account.Party.Count > 0)
-                    return Monster.CreateFullHpCopy(_data, account.Party[0]);   // 실제 개체값·노력치·성격을 그대로 물려받는다
+                {
+                    var party = new List<Monster>();
+                    foreach (var m in account.Party) party.Add(Monster.CreateFullHpCopy(_data, m));
+                    return party;
+                }
                 var trainer = _state.Get(playerId);
-                return Monster.Create(_data, trainer?.SpeciesId ?? 0, DuelFallbackLevel);
+                return new List<Monster> { Monster.Create(_data, trainer?.SpeciesId ?? 0, DuelFallbackLevel) };
             }
         }
 
@@ -266,53 +298,105 @@ namespace MonsterAdventure.Net
             lock (_lock) { ta = _state.Get(aId); tb = _state.Get(bId); }
             if (ta == null || tb == null) return;   // 수락하는 사이에 한쪽이 나갔다
 
-            var a = BuildDuelMonster(aId);
-            var b = BuildDuelMonster(bId);
-            var rt = new DuelRuntime { AId = aId, BId = bId, Duel = new Duel(_data, a, b, _rng) };
+            var partyA = BuildDuelParty(aId);
+            var partyB = BuildDuelParty(bId);
+            var rt = new DuelRuntime { AId = aId, BId = bId, Duel = new PvpBattle(_data, partyA, partyB, _rng) };
             lock (_lock) { _duelsByPlayer[aId] = rt; _duelsByPlayer[bId] = rt; }
 
-            SendTo(aId, NetMsgType.DuelStart, new DuelStartMessage { OpponentId = bId, OpponentName = tb.Name, You = Info(a), Opponent = Info(b) });
-            SendTo(bId, NetMsgType.DuelStart, new DuelStartMessage { OpponentId = aId, OpponentName = ta.Name, You = Info(b), Opponent = Info(a) });
+            SendTo(aId, NetMsgType.DuelStart, new DuelStartMessage
+            {
+                OpponentId = bId, OpponentName = tb.Name, Party = partyA.ConvertAll(Info), Potions = PvpBattle.StartPotions,
+                Opponent = PublicInfo(rt.Duel.Active(DuelSide.B)),
+            });
+            SendTo(bId, NetMsgType.DuelStart, new DuelStartMessage
+            {
+                OpponentId = aId, OpponentName = ta.Name, Party = partyB.ConvertAll(Info), Potions = PvpBattle.StartPotions,
+                Opponent = PublicInfo(rt.Duel.Active(DuelSide.A)),
+            });
             Log($"대결 시작: #{aId} vs #{bId}");
         }
 
+        DuelRuntime DuelOf(int playerId)
+        {
+            lock (_lock) { _duelsByPlayer.TryGetValue(playerId, out var rt); return rt; }
+        }
+
+        /// <summary>양쪽이 행동을 낼 때까지 기다렸다가 한 라운드를 판정한다. 기권만은 상대를 기다리지 않고 바로 처리한다.
+        /// 대결 중이 아니거나 이미 낸 행동, 규칙에 어긋난 행동은 오류를 알리거나 조용히 무시한다.</summary>
         void HandleDuelAction(int fromId, DuelActionMessage msg)
         {
-            DuelRuntime rt;
-            lock (_lock) _duelsByPlayer.TryGetValue(fromId, out rt);
+            var rt = DuelOf(fromId);
             if (rt == null) return;   // 대결 중이 아니다(끝난 뒤 늦게 도착한 메시지 등) — 조용히 무시
+            var action = msg?.ToAction();
+            if (action == null) { SendTo(fromId, NetMsgType.Error, new ErrorMessage { Reason = "알 수 없는 행동이다!" }); return; }
 
             bool isA = rt.AId == fromId;
-            string why = rt.Duel.WhyNotMove(isA ? DuelSide.A : DuelSide.B, msg.MoveId);
-            if (why != null) { SendTo(fromId, NetMsgType.Error, new ErrorMessage { Reason = why }); return; }
-
-            List<DuelEvent> events = null;
+            var side = isA ? DuelSide.A : DuelSide.B;
+            List<PvpEvent> events = null;
+            string why = null;
             lock (_lock)
             {
-                if (isA) rt.PendingAMove = msg.MoveId; else rt.PendingBMove = msg.MoveId;
-                if (rt.PendingAMove != null && rt.PendingBMove != null)
+                if (rt.Duel.IsOver) return;
+                if (action is FleeAction) events = rt.Duel.Forfeit(side);
+                else
                 {
-                    events = new List<DuelEvent>(rt.Duel.ResolveRound(rt.PendingAMove, rt.PendingBMove));
-                    rt.PendingAMove = rt.PendingBMove = null;
+                    why = rt.Duel.WhyNot(side, action);
+                    if (why == null)
+                    {
+                        if ((isA ? rt.PendingA : rt.PendingB) != null) return;   // 이미 냈다
+                        if (isA) rt.PendingA = action; else rt.PendingB = action;
+                        if (rt.PendingA != null && rt.PendingB != null)
+                        {
+                            try { events = rt.Duel.ResolveRound(rt.PendingA, rt.PendingB); }
+                            catch (InvalidOperationException e) { Log("라운드 판정 실패: " + e.Message); }
+                            rt.PendingA = rt.PendingB = null;
+                        }
+                    }
                 }
             }
+            if (why != null) { SendTo(fromId, NetMsgType.Error, new ErrorMessage { Reason = why }); return; }
             if (events == null) return;   // 상대가 아직 안 골랐다 — 기다린다
 
-            foreach (var e in events) BroadcastDuelEvent(rt, e);
-            if (rt.Duel.IsOver)
-            {
-                var winnerSide = rt.Duel.Winner.Value;
-                var loserSide = winnerSide == DuelSide.A ? DuelSide.B : DuelSide.A;
-                int winnerId = winnerSide == DuelSide.A ? rt.AId : rt.BId;
-                int loserId = winnerId == rt.AId ? rt.BId : rt.AId;
-                var (winExp, winGrowth, loseExp, loseGrowth) = ApplyDuelGrowth(rt, winnerId, loserId, winnerSide, loserSide);
+            SendDuelEvents(rt, events);
+            FinishDuelIfOver(rt);
+        }
 
-                SendTo(winnerId, NetMsgType.DuelEnded, new DuelEndedMessage { YouWon = true, ExpGained = winExp, Growth = winGrowth });
-                SendTo(loserId, NetMsgType.DuelEnded, new DuelEndedMessage { YouWon = false, ExpGained = loseExp, Growth = loseGrowth });
-                lock (_lock) { _duelsByPlayer.Remove(rt.AId); _duelsByPlayer.Remove(rt.BId); }
-                Log($"대결 종료: #{rt.AId} vs #{rt.BId} 승자={winnerId}"
-                    + (winExp > 0 ? $" (승자 경험치 {winExp})" : "") + (loseExp > 0 ? $" (패자 경험치 {loseExp})" : ""));
+        /// <summary>몬스터가 쓰러진 쪽이 다음으로 내보낼 몬스터를 고른다.</summary>
+        void HandleDuelReplace(int fromId, DuelReplaceMessage msg)
+        {
+            var rt = DuelOf(fromId);
+            if (rt == null || msg == null) return;
+            var side = rt.AId == fromId ? DuelSide.A : DuelSide.B;
+            List<PvpEvent> events = null;
+            string why;
+            lock (_lock)
+            {
+                if (rt.Duel.IsOver) return;
+                why = rt.Duel.WhyNotReplacement(side, msg.PartyIndex);
+                if (why == null) events = rt.Duel.SubmitReplacement(side, msg.PartyIndex);
             }
+            if (why != null) { SendTo(fromId, NetMsgType.Error, new ErrorMessage { Reason = why }); return; }
+            SendDuelEvents(rt, events);
+        }
+
+        void FinishDuelIfOver(DuelRuntime rt)
+        {
+            if (!rt.Duel.IsOver) return;
+            lock (_lock)
+            {
+                if (!_duelsByPlayer.TryGetValue(rt.AId, out var cur) || cur != rt) return;   // 그 사이 연결 끊김으로 이미 정리됐다
+                _duelsByPlayer.Remove(rt.AId); _duelsByPlayer.Remove(rt.BId);
+            }
+            var winnerSide = rt.Duel.Winner.Value;
+            var loserSide = winnerSide == DuelSide.A ? DuelSide.B : DuelSide.A;
+            int winnerId = winnerSide == DuelSide.A ? rt.AId : rt.BId;
+            int loserId = winnerId == rt.AId ? rt.BId : rt.AId;
+            var (winExp, winGrowth, loseExp, loseGrowth) = ApplyDuelGrowth(rt, winnerId, loserId, winnerSide, loserSide);
+
+            SendTo(winnerId, NetMsgType.DuelEnded, new DuelEndedMessage { YouWon = true, ExpGained = winExp, Growth = winGrowth });
+            SendTo(loserId, NetMsgType.DuelEnded, new DuelEndedMessage { YouWon = false, ExpGained = loseExp, Growth = loseGrowth });
+            Log($"대결 종료: #{rt.AId} vs #{rt.BId} 승자={winnerId}"
+                + (winExp > 0 ? $" (승자 경험치 {winExp})" : "") + (loseExp > 0 ? $" (패자 경험치 {loseExp})" : ""));
         }
 
         /// <summary>이긴 쪽의 영구 계정(선두 몬스터)에는 SPEC "승리 시 경험치"(패배한 종족의 baseExp·레벨 기준)를 그대로 적용한다.
@@ -347,34 +431,32 @@ namespace MonsterAdventure.Net
                         if (_accounts != null && loserTrainer != null) _accounts.Save(loserTrainer.Name, loserAccount);
                     }
                 }
+                NotifyAccount(winnerId); NotifyAccount(loserId);   // 대결로 달라진 레벨·경험치를 두 사람의 일반 게임 저장에도 반영시킨다
                 return (winExp, winGrowth, loseExp, loseGrowth);
             }
         }
 
-        static string DuelKindName(DuelEventKind k) => k switch
+        /// <summary>서버가 계정을 바꾼 뒤 그 사람에게 최신 계정을 돌려 보낸다(클라이언트가 자기 저장 파일에 쓴다).</summary>
+        void NotifyAccount(int playerId)
         {
-            DuelEventKind.MoveUsed => NetMsgType.Duel.MoveUsed,
-            DuelEventKind.Missed => NetMsgType.Duel.Missed,
-            DuelEventKind.Damage => NetMsgType.Duel.Damage,
-            DuelEventKind.Fainted => NetMsgType.Duel.Fainted,
-            _ => null,
-        };
+            string json;
+            lock (_lock) json = _accountsByPlayerId.TryGetValue(playerId, out var a) ? SaveSerializer.ToJson(a) : null;
+            if (json != null) SendTo(playerId, NetMsgType.AccountUpdated, new AccountUpdatedMessage { StateJson = json });
+        }
 
-        /// <summary>수신자 기준(0=나,1=상대)으로 뒤집어 양쪽에 보낸다. Ended 는 DuelEnded 메시지로 따로 보내므로 여기선 건너뛴다.</summary>
-        void BroadcastDuelEvent(DuelRuntime rt, DuelEvent e)
+        /// <summary>수신자 기준(0=나,1=상대)으로 뒤집어 양쪽에 한 묶음씩 보낸다. Ended 는 DuelEnded 메시지로 따로 보내므로 빠진다.</summary>
+        void SendDuelEvents(DuelRuntime rt, List<PvpEvent> events)
         {
-            string kind = DuelKindName(e.Kind);
-            if (kind == null) return;
-            SendTo(rt.AId, NetMsgType.DuelEvent, new DuelEventMessage
+            foreach (var viewer in new[] { DuelSide.A, DuelSide.B })
             {
-                Kind = kind, Side = e.Side == DuelSide.A ? 0 : 1, MoveId = e.MoveId,
-                Amount = e.Amount, Multiplier = e.Multiplier, Critical = e.Critical,
-            });
-            SendTo(rt.BId, NetMsgType.DuelEvent, new DuelEventMessage
-            {
-                Kind = kind, Side = e.Side == DuelSide.B ? 0 : 1, MoveId = e.MoveId,
-                Amount = e.Amount, Multiplier = e.Multiplier, Critical = e.Critical,
-            });
+                var batch = new List<DuelEventMessage>();
+                foreach (var e in events)
+                {
+                    var m = DuelEventMessage.From(e, viewer);
+                    if (m != null) batch.Add(m);
+                }
+                if (batch.Count > 0) SendTo(viewer == DuelSide.A ? rt.AId : rt.BId, NetMsgType.DuelEvents, new DuelEventsMessage { Events = batch });
+            }
         }
 
         /// <summary>연결이 끊긴 트레이너가 대결 중이었다면, 상대에게 기권승을 알리고 대결을 정리한다.</summary>

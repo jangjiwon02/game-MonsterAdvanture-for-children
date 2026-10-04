@@ -408,57 +408,74 @@ namespace MonsterAdventure.Tests
             Assert.AreEqual((id2, true), ((int)result1["OtherId"], (bool)result1["Accepted"]));
         }
 
+        /// <summary>접속·인접·도전·수락까지 마친 두 클라이언트. Dispose 하면 둘 다 닫는다.</summary>
+        sealed class DuelPair : System.IDisposable
+        {
+            public TcpArenaClient C1, C2;
+            public JObject Start1, Start2;
+            public void Dispose() { C1?.Dispose(); C2?.Dispose(); }
+        }
+
+        /// <summary>두 사람을 접속시키고 실제로 걸어서 인접시킨 뒤 도전 → 수락으로 대결을 시작시킨다(좌표를 직접 못 정하니 걷는다).</summary>
+        static DuelPair StartDuelBetween(TcpArenaServer server, string name1, int starter1, string name2, int starter2)
+        {
+            var pair = new DuelPair { C1 = new TcpArenaClient(), C2 = new TcpArenaClient() };
+            pair.C1.Connect("127.0.0.1", server.Port, name1, starter1);
+            var (_, w1) = WaitFor(pair.C1, NetMsgType.Welcome);
+            pair.C2.Connect("127.0.0.1", server.Port, name2, starter2);
+            var (_, w2) = WaitFor(pair.C2, NetMsgType.Welcome);
+            int id2 = (int)w2["Id"];
+            WaitFor(pair.C1, NetMsgType.Joined);
+
+            int x1 = (int)w1["X"], y1 = (int)w1["Y"], x2 = (int)w2["X"], y2 = (int)w2["Y"];
+            int guard = 0;
+            while (System.Math.Abs(x1 - x2) + System.Math.Abs(y1 - y2) != 1)
+            {
+                Assert.Less(guard++, 60, "60칸을 걸어도 인접하지 못했다");
+                var dir = System.Math.Abs(x1 - x2) >= System.Math.Abs(y1 - y2)
+                    ? (x1 > x2 ? NetDirection.Right : NetDirection.Left)
+                    : (y1 > y2 ? NetDirection.Down : NetDirection.Up);
+                pair.C2.SendMove(dir);
+                var (_, moved) = WaitFor(pair.C1, NetMsgType.Moved);
+                x2 = (int)moved["X"]; y2 = (int)moved["Y"];
+            }
+
+            pair.C1.SendChallenge(id2);
+            WaitFor(pair.C2, NetMsgType.ChallengeOffer);
+            pair.C2.SendChallengeResponse(true);
+            WaitFor(pair.C1, NetMsgType.ChallengeResult);
+            WaitFor(pair.C2, NetMsgType.ChallengeResult);
+            pair.Start1 = WaitFor(pair.C1, NetMsgType.DuelStart).data;
+            pair.Start2 = WaitFor(pair.C2, NetMsgType.DuelStart).data;
+            return pair;
+        }
+
+        static string[] EventKinds(JObject batch) => ((JArray)batch["Events"]).Select(e => (string)e["Kind"]).ToArray();
+        static JToken EventOf(JObject batch, int i) => ((JArray)batch["Events"])[i];
+
+        static string TempRoot() => Path.Combine(Path.GetTempPath(), "duel_party_test_" + System.Guid.NewGuid());
+
         [Test]
         public void DuelWin_GrantsFullExpToWinner_AndPartialExpToLoser_BothPersisted()
         {
-            string root = Path.Combine(Path.GetTempPath(), "duel_growth_test_" + System.Guid.NewGuid());
+            string root = TempRoot();
             try
             {
                 var accounts = new TrainerAccountStore(root);
                 using var server = new TcpArenaServer(_data, _map, accounts);
                 server.Start();
-
-                using var c1 = new TcpArenaClient();
-                c1.Connect("127.0.0.1", server.Port, "도전자", 0);   // 불꼬마
-                var (_, w1) = WaitFor(c1, NetMsgType.Welcome);
-
-                using var c2 = new TcpArenaClient();
-                c2.Connect("127.0.0.1", server.Port, "상대", 4);     // 새싹이
-                var (_, w2) = WaitFor(c2, NetMsgType.Welcome);
-                int id2 = (int)w2["Id"];
-                WaitFor(c1, NetMsgType.Joined);
-
-                // 인접시킨다(다른 라이브 테스트와 같은 방식 — 좌표를 직접 못 정하니 실제로 걸어간다).
-                int x1 = (int)w1["X"], y1 = (int)w1["Y"], x2 = (int)w2["X"], y2 = (int)w2["Y"];
-                int guard = 0;
-                while (System.Math.Abs(x1 - x2) + System.Math.Abs(y1 - y2) != 1)
-                {
-                    Assert.Less(guard++, 60, "60칸을 걸어도 인접하지 못했다");
-                    var dir = System.Math.Abs(x1 - x2) >= System.Math.Abs(y1 - y2)
-                        ? (x1 > x2 ? NetDirection.Right : NetDirection.Left)
-                        : (y1 > y2 ? NetDirection.Down : NetDirection.Up);
-                    c2.SendMove(dir);
-                    var (_, moved) = WaitFor(c1, NetMsgType.Moved);
-                    x2 = (int)moved["X"]; y2 = (int)moved["Y"];
-                }
-
-                c1.SendChallenge(id2);
-                WaitFor(c2, NetMsgType.ChallengeOffer);
-                c2.SendChallengeResponse(true);
-                WaitFor(c1, NetMsgType.ChallengeResult);
-                WaitFor(c2, NetMsgType.ChallengeResult);
-
-                var (_, start1) = WaitFor(c1, NetMsgType.DuelStart);
-                var (_, start2) = WaitFor(c2, NetMsgType.DuelStart);
-                string move1 = (string)start1["You"]["Moves"][0];
-                string move2 = (string)start2["You"]["Moves"][0];
+                using var pair = StartDuelBetween(server, "도전자", 0, "상대", 4);   // 불꼬마 vs 새싹이
+                var c1 = pair.C1; var c2 = pair.C2;
+                Assert.AreEqual(1, ((JArray)pair.Start1["Party"]).Count, "새 계정은 파트너 한 마리뿐");
+                string move1 = (string)pair.Start1["Party"][0]["Moves"][0];
+                string move2 = (string)pair.Start2["Party"][0]["Moves"][0];
 
                 // 매 라운드 각자 첫 기술만 계속 낸다 — 누가 이기든 대결이 끝날 때까지 반복한다.
                 JObject ended1Data = null, ended2Data = null;
                 for (int round = 0; round < 30 && (ended1Data == null || ended2Data == null); round++)
                 {
-                    c1.SendDuelAction(move1);
-                    c2.SendDuelAction(move2);
+                    c1.SendDuelAction(new MoveAction(move1));
+                    c2.SendDuelAction(new MoveAction(move2));
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     while (sw.ElapsedMilliseconds < 2000 && (ended1Data == null || ended2Data == null))
                     {
@@ -510,6 +527,160 @@ namespace MonsterAdventure.Tests
             {
                 if (Directory.Exists(root)) Directory.Delete(root, true);
             }
+        }
+
+        [Test]
+        public void Duel_PotionAndSwitch_TravelOverTheWire_AndTheRealAccountsAreUntouched()
+        {
+            string root = TempRoot();
+            try
+            {
+                var accounts = new TrainerAccountStore(root);
+                var p1 = PlayerState.NewGame(_data, 0); p1.Party.Add(Monster.Create(_data, 2, 5));   // 불꼬마 + 물방울이
+                var p2 = PlayerState.NewGame(_data, 4); p2.Party.Add(Monster.Create(_data, 0, 5));   // 새싹이 + 불꼬마
+                accounts.Save("도전자", p1); accounts.Save("상대", p2);
+                using var server = new TcpArenaServer(_data, _map, accounts);
+                server.Start();
+                using var pair = StartDuelBetween(server, "도전자", 0, "상대", 4);
+                var c1 = pair.C1; var c2 = pair.C2;
+
+                Assert.AreEqual(2, ((JArray)pair.Start1["Party"]).Count, "내 파티 전체를 받는다");
+                Assert.AreEqual(2, (int)pair.Start1["Party"][1]["SpeciesId"]);
+                Assert.AreEqual(3, (int)pair.Start1["Potions"]);
+                Assert.AreEqual(4, (int)pair.Start1["Opponent"]["SpeciesId"], "상대는 출전 중인 몬스터만 보인다");
+                Assert.AreEqual(JTokenType.Null, pair.Start1["Opponent"]["Moves"].Type, "상대의 기술은 숨긴다");
+
+                // 풀피에게 쓰는 상처약·모르는 기술은 서버가 거절하고 오류를 돌려준다(상태는 그대로).
+                c2.SendDuelAction(new PotionAction(0));
+                var (_, err) = WaitFor(c2, NetMsgType.Error);
+                Assert.AreEqual("이미 HP가 가득 찼다!", (string)err["Reason"]);
+                c2.SendDuelAction(new MoveAction("blast"));
+                Assert.AreEqual("배우지 않은 기술이다!", (string)WaitFor(c2, NetMsgType.Error).data["Reason"]);
+
+                // 1라운드: 도전자는 교체, 상대는 몸통박치기(명중 100) — 새로 나온 몬스터가 맞는다.
+                c1.SendDuelAction(new SwitchAction(1));
+                c2.SendDuelAction(new MoveAction("tackle"));
+                var (_, batch1) = WaitFor(c1, NetMsgType.DuelEvents);
+                var (_, batch2) = WaitFor(c2, NetMsgType.DuelEvents);
+                CollectionAssert.AreEqual(new[] { "switchOut", "switchIn", "moveUsed", "damage" }, EventKinds(batch1));
+                CollectionAssert.AreEqual(new[] { "switchOut", "switchIn", "moveUsed", "damage" }, EventKinds(batch2));
+                Assert.AreEqual(0, (int)EventOf(batch1, 1)["Side"]);
+                Assert.AreEqual(1, (int)EventOf(batch1, 1)["PartyIndex"]);
+                Assert.AreEqual(0, (int)EventOf(batch1, 3)["Side"], "도전자 쪽이 맞았다(도전자 기준 0 = 나)");
+                Assert.AreEqual(1, (int)EventOf(batch2, 3)["Side"], "같은 사건이 상대 기준으로는 1");
+                Assert.AreEqual(2, (int)EventOf(batch2, 1)["Monster"]["SpeciesId"], "상대의 SwitchIn 에는 새 몬스터의 모습이 실린다");
+                Assert.AreEqual(-1, (int)EventOf(batch2, 1)["PartyIndex"], "상대 파티 칸은 숨긴다");
+                int hit = (int)EventOf(batch1, 3)["Amount"];
+                Assert.GreaterOrEqual(hit, 1);
+
+                // 2라운드: 도전자는 방금 맞은 몬스터에게 상처약, 상대는 또 공격.
+                c1.SendDuelAction(new PotionAction(1));
+                c2.SendDuelAction(new MoveAction("tackle"));
+                var (_, potion1) = WaitFor(c1, NetMsgType.DuelEvents);
+                var (_, potion2) = WaitFor(c2, NetMsgType.DuelEvents);
+                CollectionAssert.AreEqual(new[] { "potionUsed", "moveUsed", "damage" }, EventKinds(potion1));
+                Assert.AreEqual(0, (int)EventOf(potion1, 0)["Side"]);
+                Assert.AreEqual(1, (int)EventOf(potion1, 0)["PartyIndex"]);
+                Assert.AreEqual(hit, (int)EventOf(potion1, 0)["Amount"], "맞은 만큼만 차오른다(30 이 아니라 실제 회복량)");
+                Assert.AreEqual(1, (int)EventOf(potion2, 0)["Side"]);
+                Assert.IsTrue((bool)EventOf(potion2, 0)["TargetActive"]);
+                Assert.AreEqual(2, (int)EventOf(potion2, 0)["Monster"]["SpeciesId"]);
+
+                // 기권: 즉시 끝나고 기권한 쪽이 진다.
+                c1.SendDuelAction(new FleeAction());
+                var (_, forfeit1) = WaitFor(c1, NetMsgType.DuelEvents);
+                var (_, forfeit2) = WaitFor(c2, NetMsgType.DuelEvents);
+                CollectionAssert.AreEqual(new[] { "forfeit" }, EventKinds(forfeit1));
+                Assert.AreEqual(0, (int)EventOf(forfeit1, 0)["Side"]);
+                Assert.AreEqual(1, (int)EventOf(forfeit2, 0)["Side"]);
+                var (_, ended1) = WaitFor(c1, NetMsgType.DuelEnded);
+                var (_, ended2) = WaitFor(c2, NetMsgType.DuelEnded);
+                Assert.IsFalse((bool)ended1["YouWon"]);
+                Assert.IsTrue((bool)ended2["YouWon"]);
+                Assert.IsFalse((bool)ended2["OpponentLeft"]);
+
+                // 끝난 뒤 늦게 온 행동은 조용히 무시되고, 연결은 멀쩡하다.
+                c1.SendDuelAction(new MoveAction("tackle"));
+                c1.SendDuelReplace(0);
+                c1.SendMove(NetDirection.Down);
+                WaitFor(c1, NetMsgType.Moved);
+
+                // 친선 대결이라 진짜 계정의 상처약·HP 는 그대로다(경험치만 오른다).
+                var saved = accounts.Load(_data, "도전자");
+                Assert.AreEqual(3, saved.Potions);
+                foreach (var m in saved.Party) Assert.AreEqual(m.MaxHp, m.Hp);
+            }
+            finally
+            {
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void Duel_FaintedMonster_WaitsForTheReplacement_ThenContinues()
+        {
+            string root = TempRoot();
+            try
+            {
+                var accounts = new TrainerAccountStore(root);
+                var p1 = new PlayerState();
+                p1.Party.Add(Monster.Create(_data, 4, 1)); p1.Party.Add(Monster.Create(_data, 0, 5));   // 곧 쓰러질 Lv.1 + 교체 요원
+                var p2 = new PlayerState();
+                p2.Party.Add(Monster.Create(_data, 15, 40));                                               // 압도적인 상대
+                accounts.Save("도전자", p1); accounts.Save("상대", p2);
+                using var server = new TcpArenaServer(_data, _map, accounts);
+                server.Start();
+                using var pair = StartDuelBetween(server, "도전자", 4, "상대", 15);
+                var c1 = pair.C1; var c2 = pair.C2;
+
+                c1.SendDuelAction(new MoveAction("tackle"));
+                c2.SendDuelAction(new MoveAction("tackle"));
+                var (_, b1) = WaitFor(c1, NetMsgType.DuelEvents);
+                var (_, b2) = WaitFor(c2, NetMsgType.DuelEvents);
+                CollectionAssert.AreEqual(new[] { "moveUsed", "damage", "fainted", "replacementNeeded" }, EventKinds(b1));
+                CollectionAssert.AreEqual(new[] { "moveUsed", "damage", "fainted", "replacementNeeded" }, EventKinds(b2));
+                Assert.AreEqual(0, (int)EventOf(b1, 3)["Side"], "도전자 기준: 내가 골라야 한다");
+                Assert.AreEqual(1, (int)EventOf(b2, 3)["Side"], "상대 기준: 상대가 고르는 중");
+
+                // 고르는 동안 행동이나 쓰러진 몬스터 선택은 거절된다.
+                c2.SendDuelAction(new MoveAction("tackle"));
+                WaitFor(c2, NetMsgType.Error);
+                c1.SendDuelReplace(0);
+                Assert.AreEqual("기절한 몬스터는 싸울 수 없다!", (string)WaitFor(c1, NetMsgType.Error).data["Reason"]);
+
+                c1.SendDuelReplace(1);
+                var (_, r1) = WaitFor(c1, NetMsgType.DuelEvents);
+                var (_, r2) = WaitFor(c2, NetMsgType.DuelEvents);
+                CollectionAssert.AreEqual(new[] { "switchIn" }, EventKinds(r1));
+                CollectionAssert.AreEqual(new[] { "switchIn" }, EventKinds(r2));
+                Assert.AreEqual(1, (int)EventOf(r1, 0)["PartyIndex"]);
+                Assert.AreEqual(0, (int)EventOf(r2, 0)["Monster"]["SpeciesId"], "상대에게는 새로 나온 불꼬마의 모습");
+
+                // 이제 다시 라운드를 진행할 수 있다.
+                c1.SendDuelAction(new MoveAction("tackle"));
+                c2.SendDuelAction(new MoveAction("tackle"));
+                var (_, next) = WaitFor(c1, NetMsgType.DuelEvents);
+                Assert.AreEqual("moveUsed", EventKinds(next)[0]);
+            }
+            finally
+            {
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void Duel_Disconnect_ForfeitsToTheOpponent()
+        {
+            using var server = new TcpArenaServer(_data, _map);
+            server.Start();
+            using var pair = StartDuelBetween(server, "도전자", 0, "상대", 4);
+
+            // 한쪽만 기술을 낸 상태(라운드 진행 중)에서 상대가 끊는다.
+            pair.C1.SendDuelAction(new MoveAction("tackle"));
+            pair.C2.Dispose();
+            var (_, ended) = WaitFor(pair.C1, NetMsgType.DuelEnded);
+            Assert.IsTrue((bool)ended["YouWon"]);
+            Assert.IsTrue((bool)ended["OpponentLeft"]);
         }
     }
 }

@@ -40,6 +40,10 @@ namespace MonsterAdventure
             Map = WorldMap.Generate();
             WorldMap.AddChungjuLandmarks(Map);
 
+            // 안드로이드는 따로 정하지 않으면 30fps 로 돈다 — 한 칸(0.14초)이 4프레임뿐이라 걸을 때 화면이 끊겨 보인다.
+            Application.targetFrameRate = 60;
+            QualitySettings.vSyncCount = 0;
+
             gameObject.AddComponent<GameInput>();
             gameObject.AddComponent<TouchControls>();   // 모바일 터치 방향 패드 + Z/X — Arena 모드도 이 GameInput 을 공유하므로 자동으로 적용된다
             Ui = gameObject.AddComponent<GameUi>();
@@ -86,37 +90,11 @@ namespace MonsterAdventure
             yield return GameUi.Tween(.3f, p => Ui.Fade = 1f - p);
         }
 
-        const string NotOnRosterLabel = "명단에 없음(직접 입력)";
-
-        /// <summary>원격 진행상황 기록용 이름이 아직 없으면(예전 저장이거나 첫 실행) 명단에서 골라서 저장에 남긴다.
-        /// 명단에 없는 제3자는 "직접 입력"을 골라 이름을 타이핑하되, 실제 학생 이름과 안 겹치도록 기기ID 일부를
-        /// 붙여서 구분한다(스프레드시트의 최신현황 탭은 이름 하나당 한 줄만 유지하므로, 겹치면 서로 덮어써 버린다).</summary>
+        /// <summary>원격 진행상황 기록·LAN 접속에 쓰는 이름이 아직 없으면(예전 저장이거나 첫 실행) 명단에서 골라 저장에 남긴다.</summary>
         IEnumerator EnsurePlayerName()
         {
             if (!string.IsNullOrEmpty(State.PlayerName)) yield break;
-
-            var names = new List<string> { Roster.Teacher };
-            names.AddRange(Roster.Students);
-            names.Add(NotOnRosterLabel);
-            yield return Ui.Say("진행상황 기록을 위해 명단에서 이름을 골라 주세요.");
-            yield return Ui.Choose(names, new MenuOptions
-            {
-                Rect = new Rect(UiKit.VirtualWidth / 2f - 140, 70, 280, 7 * 26 + 16),
-                Cols = 2, Full = true, Prompt = "누구인가요?",
-            });
-            int choice = Mathf.Max(0, Ui.Choice);
-
-            if (names[choice] == NotOnRosterLabel)
-            {
-                string typed = null;
-                yield return Ui.EnterText("이름을 입력하세요", 10, n => typed = n?.Trim());
-                string tag = TelemetryClient.DeviceId.Substring(0, 6);
-                State.PlayerName = string.IsNullOrEmpty(typed) ? $"손님({tag})" : $"{typed}({tag})";
-            }
-            else
-            {
-                State.PlayerName = names[choice];
-            }
+            yield return PlayerIdentity.EnsureName(Ui, State);
             SaveStore.Save(State);
         }
 

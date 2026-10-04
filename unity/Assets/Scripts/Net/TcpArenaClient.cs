@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Sockets;
 using System.Threading;
+using MonsterAdventure.Core;
 using Newtonsoft.Json.Linq;
 
 namespace MonsterAdventure.Net
@@ -23,8 +24,9 @@ namespace MonsterAdventure.Net
         public bool IsConnected { get; private set; }
 
         /// <summary>연결하고 hello 를 보낸다. 실패하면 예외를 던진다(호출자가 try/catch 로 사용자에게 알린다).</summary>
-        public void Connect(string host, int port, string name, int starterSpeciesId, int timeoutMs = 4000)
+        public void Connect(string host, int port, string name, int starterSpeciesId, int timeoutMs = 4000, string stateJson = null)
         {
+            _client.NoDelay = true;   // 작은 이동 메시지가 Nagle 알고리즘에 묶여 늦게 나가면 상대 화면에서 캐릭터가 끊겨 보인다
             var result = _client.BeginConnect(host, port, null, null);
             if (!result.AsyncWaitHandle.WaitOne(timeoutMs)) throw new TimeoutException($"{host}:{port} 에 연결할 수 없다(시간 초과).");
             _client.EndConnect(result);
@@ -32,7 +34,7 @@ namespace MonsterAdventure.Net
             IsConnected = true;
             _readThread = new Thread(ReadLoop) { IsBackground = true, Name = "ArenaClient.Read" };
             _readThread.Start();
-            SendRaw(NetMsgType.Hello, new HelloMessage { Name = name, SpeciesId = starterSpeciesId });
+            SendRaw(NetMsgType.Hello, new HelloMessage { Name = name, SpeciesId = starterSpeciesId, StateJson = stateJson });
         }
 
         void ReadLoop()
@@ -57,7 +59,8 @@ namespace MonsterAdventure.Net
         public void SendMove(NetDirection dir) => SendRaw(NetMsgType.Move, new MoveMessage { Dir = (int)dir });
         public void SendChallenge(int targetId) => SendRaw(NetMsgType.ChallengeRequest, new ChallengeRequestMessage { TargetId = targetId });
         public void SendChallengeResponse(bool accept) => SendRaw(NetMsgType.ChallengeResponse, new ChallengeResponseMessage { Accept = accept });
-        public void SendDuelAction(string moveId) => SendRaw(NetMsgType.DuelAction, new DuelActionMessage { MoveId = moveId });
+        public void SendDuelAction(BattleAction action) => SendRaw(NetMsgType.DuelAction, DuelActionMessage.From(action));
+        public void SendDuelReplace(int partyIndex) => SendRaw(NetMsgType.DuelReplace, new DuelReplaceMessage { PartyIndex = partyIndex });
         public void SendUpdateAccount(string stateJson) => SendRaw(NetMsgType.UpdateAccount, new UpdateAccountMessage { StateJson = stateJson });
 
         void SendRaw(string type, object payload)
