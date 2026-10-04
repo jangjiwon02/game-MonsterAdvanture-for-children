@@ -186,6 +186,10 @@ mono({ n: '동글이', t: 'water', f: 'shell', c: '#3fb6c6', c2: '#dff7f5', b: [
 mono({ n: '스르릉', t: 'rock',  f: 'coil',  c: '#8090a8', c2: '#dde5ee', b: [55, 70, 65, 70], rate: .30, xp: 105 });
 SP.forEach(s => { s.learn = LEARN[s.f === 'wings' || s.f === 'ears' ? 'normal' : s.t]; });
 const BASE_IDS = SP.filter(s => s.st === 1).map(s => s.id);
+// 야생 후보. 물 타일에서는 물 타입만, 풀숲에서는 물 타입을 뺀 나머지가 나온다(뿔불이는 마을에서 먼 곳에서만).
+function wildPool(d, water) {
+  return BASE_IDS.filter(id => (d >= 11 || SP[id].n !== '뿔불이') && (SP[id].t === 'water') === !!water);
+}
 
 const need = lv => Math.floor(lv * lv * 1.2) + 8;
 function recalc(m) {
@@ -472,7 +476,7 @@ function drawMon(sp, cx, cy, r, o = {}) {
 /* ---------- 맵 ---------- */
 const MW = 48, MH = 36, VX = 24, VY = 18;
 // 0 잔디 1 풀숲 2 나무(사과나무 포함) 3 물 4 길 5 벽 6 아동센터문 7 상점문 8 꽃 9 센터지붕 10 상점지붕 11/12 중앙탑(아래/위)
-const SOLID = new Set([2, 3, 5, 9, 10, 11, 12]);
+const SOLID = new Set([2, 5, 9, 10, 11, 12]);   // 3(물)은 걸어 다닐 수 있다
 let map = [];
 function genMap() {
   const r = mulberry32(20240921);
@@ -858,7 +862,7 @@ function onStep() {
   const t = map[pl.y][pl.x];
   if (t === 6) return healScene();
   if (t === 7) return shopScene();
-  if (t === 1 && Math.random() < .14) startWild();
+  if ((t === 1 || t === 3) && Math.random() < .14) startWild(t === 3);   // 풀숲·물 모두 14%, 물에서는 물 타입
 }
 
 /* ---------- 마을 이벤트 ---------- */
@@ -1347,11 +1351,11 @@ async function checkEvolve(m) {
 }
 
 /* ---------- 야생 조우 ---------- */
-async function startWild() {
+async function startWild(water) {
   busy = true;
   const d = Math.hypot(pl.x - VX, pl.y - VY);
   const lv = clamp(2 + Math.floor(d / 3.4) + rnd(-1, 1), 2, 40);
-  let pool = BASE_IDS.filter(id => d >= 11 || SP[id].n !== '뿔불이');
+  let pool = wildPool(d, water);
   let id = pick(pool);
   while (SP[id].ev && lv >= SP[id].ev[0]) id = SP[id].ev[1];
   await battle(makeMon(id, lv));

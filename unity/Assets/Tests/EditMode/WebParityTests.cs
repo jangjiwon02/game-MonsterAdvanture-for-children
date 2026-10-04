@@ -131,15 +131,17 @@ namespace MonsterAdventure.Tests
         [Test]
         public void WildEncounters_MatchWeb()
         {
-            foreach (var c in _golden["wild"])
-            {
-                var rng = new ScriptedRng(Rolls(c["rolls"]));
-                var m = WildEncounter.Generate(_data, (int)c["x"], (int)c["y"], rng);
-                string label = $"({c["x"]},{c["y"]}) rolls[{c["rolls"]}]";
-                Assert.AreEqual((int)c["id"], m.SpeciesId, label + " 종족");
-                Assert.AreEqual((int)c["lv"], m.Level, label + " 레벨");
-                Assert.AreEqual(0, rng.Remaining, label);
-            }
+            // 풀숲("wild")과 물("wildWater") 두 후보 풀 모두 웹과 같아야 한다.
+            foreach (var (key, water) in new[] { ("wild", false), ("wildWater", true) })
+                foreach (var c in _golden[key])
+                {
+                    var rng = new ScriptedRng(Rolls(c["rolls"]));
+                    var m = WildEncounter.Generate(_data, (int)c["x"], (int)c["y"], rng, water);
+                    string label = $"[{key}] ({c["x"]},{c["y"]}) rolls[{c["rolls"]}]";
+                    Assert.AreEqual((int)c["id"], m.SpeciesId, label + " 종족");
+                    Assert.AreEqual((int)c["lv"], m.Level, label + " 레벨");
+                    Assert.AreEqual(0, rng.Remaining, label);
+                }
         }
 
         [Test]

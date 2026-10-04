@@ -229,7 +229,7 @@ namespace MonsterAdventure
             // 눈에 보이는 스폰을 끄면(UseVisibleSpawns=false) 예전처럼 풀숲 한 칸 이동마다 14% 로 야생 몬스터가 나타난다.
             else if (!UseVisibleSpawns && WildEncounter.ShouldEncounter(tile, Rng))
             {
-                var wild = WildEncounter.Generate(Data, x, y, Rng);
+                var wild = WildEncounter.Generate(Data, x, y, Rng, water: tile == Tile.Water);
                 wild.RollIndividualValues(Data);   // 야생 개체마다 실제로 개체값이 다르다(웹 골든 테스트와 무관한 별도 단계)
                 StartCoroutine(EncounterRoutine(wild));
             }

@@ -29,7 +29,8 @@ namespace MonsterAdventure.Core
             if (!InBounds(x, y)) return false;
             switch (_tiles[y, x])
             {
-                case Tile.Tree: case Tile.Water: case Tile.Wall: case Tile.CenterRoof:
+                // 물(Tile.Water)은 풀숲처럼 걸어 다닐 수 있다 — 물에서는 물 타입 야생 몬스터를 만난다(WildEncounter).
+                case Tile.Tree: case Tile.Wall: case Tile.CenterRoof:
                 case Tile.ShopRoof: case Tile.TowerBase: case Tile.TowerTop: case Tile.SchoolRoof:
                     return false;
                 default:
