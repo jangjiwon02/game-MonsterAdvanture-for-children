@@ -3,13 +3,21 @@
 // Apps Script 프로젝트에 그대로 붙여넣는다.
 
 function doPost(e) {
+  // 여러 기기가 동시에 보내도 '최신현황' 탭에 같은 이름 줄이 두 번 생기지 않도록 한 번에 하나씩만 처리한다.
+  var lock = LockService.getScriptLock();
   try {
+    lock.waitLock(20000);
     var data = JSON.parse(e.postData.contents);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
 
     if (data.event === 'install') {
-      appendRow_(ss, '설치기록', ['시각', '기기ID', '앱버전'],
-        [nowStr_(), data.device_id, data.app_version]);
+      // 같은 기기가 응답을 못 받고 다시 보내도 설치 수가 부풀지 않게, 이미 있는 기기ID 는 건너뛴다.
+      var installSheet = ensureHeaders_(ss, '설치기록', ['시각', '기기ID', '앱버전']);
+      var ids = installSheet.getRange(2, 2, Math.max(installSheet.getLastRow() - 1, 1), 1).getValues()
+        .map(function (r) { return r[0]; });
+      if (ids.indexOf(data.device_id) === -1) {
+        installSheet.appendRow([nowStr_(), data.device_id, data.app_version]);
+      }
     } else if (data.event === 'session_start') {
       appendRow_(ss, '접속기록', ['시각', '이름', '기기ID', '종류', '이번접속(분)'],
         [nowStr_(), data.player_name, data.device_id, '시작', '']);
@@ -35,6 +43,8 @@ function doPost(e) {
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ ok: false, error: String(err) }))
       .setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
   }
 }
 

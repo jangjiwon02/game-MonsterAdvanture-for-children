@@ -37,6 +37,60 @@ namespace MonsterAdventure
         WelcomeMessage _pendingWelcome; // Update() 가 큐에서 받아 두면 Lobby() 코루틴이 가져간다(소비자를 하나로 유지)
         DuelController _duel;          // 대결 중이면 non-null — Update() 의 이동·도전 입력을 잠그는 데도 쓴다
 
+        // 원격 접속 기록(TelemetryClient). LAN 모드는 단일 플레이 명단과 별개로 직접 타이핑한 트레이너 이름을 쓰므로,
+        // 명단의 실제 학생 이름과 같은 줄에 덮어쓰지 않도록 "(LAN)" 을 붙여 구분한다.
+        const float HeartbeatSeconds = 60f;
+        string TelemetryName => _localName + "(LAN)";
+        System.DateTime _sessionStartUtc;
+        bool _sessionOpen;
+        Coroutine _heartbeat;
+
+        void BeginArenaSession()
+        {
+            if (_localState == null || _sessionOpen) return;
+            _sessionOpen = true;
+            _sessionStartUtc = System.DateTime.UtcNow;
+            TelemetryClient.SendSessionStart(TelemetryName);
+            SendArenaProgress();
+            _heartbeat = StartCoroutine(ArenaHeartbeat());
+        }
+
+        void EndArenaSession()
+        {
+            if (_localState == null || !_sessionOpen) return;
+            _sessionOpen = false;
+            if (_heartbeat != null) { StopCoroutine(_heartbeat); _heartbeat = null; }
+            double elapsed = (System.DateTime.UtcNow - _sessionStartUtc).TotalSeconds;
+            if (elapsed <= 0) return;
+            _localState.TotalPlaySeconds += elapsed;
+            TelemetryClient.SendSessionEnd(TelemetryName, elapsed, _localState.TotalPlaySeconds);
+            SyncState();
+        }
+
+        IEnumerator ArenaHeartbeat()
+        {
+            for (;;)
+            {
+                yield return new WaitForSecondsRealtime(HeartbeatSeconds);
+                SendArenaProgress();
+            }
+        }
+
+        void SendArenaProgress()
+        {
+            if (_localState == null) return;
+            double total = _localState.TotalPlaySeconds + (_sessionOpen ? (System.DateTime.UtcNow - _sessionStartUtc).TotalSeconds : 0);
+            TelemetryClient.SendProgress(TelemetryName,
+                _localState.Party.Count > 0 ? _localState.Party[0].Level : 0, _localState.Dex.Count, _localState.Money, total);
+        }
+
+        void OnApplicationPause(bool paused)
+        {
+            if (paused) EndArenaSession(); else BeginArenaSession();
+        }
+
+        void OnApplicationQuit() => EndArenaSession();
+
         /// <summary>
         /// 이미 있는 GameInput/GameUi(타이틀 화면이 쓰던 것)를 그대로 물려받는다 — 여기서 새로 만들면
         /// GameInput.Instance 싱글턴이 두 개가 되어 서로의 입력 큐를 가로채게 된다.
@@ -103,10 +157,25 @@ namespace MonsterAdventure
             if (hosting)
             {
                 yield return StartServer();
+                // 다른 사람이 접속하려면 이 주소를 알아야 한다 — 월드에 들어간 뒤 구석의 작은 글씨로만 보여주면 놓치기 쉬워서,
+                // 입장 전에 대사로 먼저 크게 알려 준다.
+                string hostLan = LanAddress.TryGetLocalIPv4();
+                yield return _ui.Say(hostLan != null
+                    ? $"서버를 열었다!\n다른 기기는 [서버 접속]에서 이 주소를 입력하세요:\n{hostLan}"
+                    : "서버를 열었지만 이 기기의 Wi-Fi 주소를 찾지 못했다.\n같은 Wi-Fi에 연결돼 있는지 확인해 주세요.");
             }
             else
             {
-                var octets = new[] { 127, 0, 0, 1 };
+                // 같은 Wi-Fi라면 주소의 앞 세 자리(예: 192.168.0)는 호스트와 같다 — 이 기기의 주소를 기본값으로 깔아 두면
+                // 마지막 한 자리만 고르면 된다. (127.0.0.1 은 "이 기기 자신"이라 다른 기기를 가리킬 수 없다.)
+                var octets = new[] { 192, 168, 0, 1 };
+                var ownLan = LanAddress.TryGetLocalIPv4();
+                if (ownLan != null)
+                {
+                    var parts = ownLan.Split('.');
+                    if (parts.Length == 4 && int.TryParse(parts[0], out int a0) && int.TryParse(parts[1], out int a1) && int.TryParse(parts[2], out int a2))
+                        octets = new[] { a0, a1, a2, 1 };
+                }
                 for (int i = 0; i < 4; i++)
                 {
                     var items = new string[256];
@@ -121,12 +190,17 @@ namespace MonsterAdventure
                 host = string.Join(".", octets);
             }
 
+            bool loopbackByMistake = !hosting && host.StartsWith("127.");
+            if (loopbackByMistake)
+                yield return _ui.Say("주의: 127.x.x.x 는 '이 기기 자신'이라 다른 폰의 서버에 접속할 수 없어요.\n호스트 폰에 표시된 주소(예: 192.168.0.12)를 입력해야 해요.", 2200);
             yield return _ui.Say($"{host}:{DefaultPort} 에 접속하는 중...", 400);
             bool connected = TryConnect(host, out string failReason);
             if (!connected)
             {
                 if (hosting) { _hostedServer?.Dispose(); _hostedServer = null; }
-                yield return _ui.Say($"접속하지 못했다: {failReason}\n메뉴로 돌아간다.");
+                string hint = loopbackByMistake ? "\n(127.x 는 이 기기 자신이에요. 호스트 폰 주소를 입력해 보세요)"
+                    : !hosting ? "\n(호스트와 같은 Wi-Fi인지, 주소가 맞는지 확인하세요)" : "";
+                yield return _ui.Say($"접속하지 못했다: {failReason}{hint}\n메뉴로 돌아간다.");
                 StartCoroutine(Lobby(rig));
                 yield break;
             }
@@ -161,6 +235,7 @@ namespace MonsterAdventure
                 _statusLine = lan != null ? $"다른 사람 접속 주소: {lan}:{DefaultPort}" : $"이 기기 LAN 주소를 찾지 못했다 (포트 {DefaultPort})";
             }
             _localState = !string.IsNullOrEmpty(welcome.StateJson) ? SaveSerializer.FromJson(_data, welcome.StateJson) : null;
+            BeginArenaSession();
             yield return _ui.Say($"{J(_localName, "은", "는")} {host}:{DefaultPort} 에 접속했다!\n소지금 ₩{welcome.Money}", 900);
             // "접속했는데 아무도 안 보인다"는 서로 다른 세션(호스트 IP를 잘못 입력 등)에 들어간 경우가 잦다 —
             // 지금 같은 세션에 몇 명이 있는지 바로 알려주면 그 경우를 즉시 구분할 수 있다.
@@ -382,16 +457,17 @@ namespace MonsterAdventure
             BeginArenaScene();
             for (;;)
             {
-                var items = new[] { "몬스터", "가방", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "닫기" };
+                var items = new[] { "몬스터", "가방", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "게임 종료", "닫기" };
                 yield return _ui.Choose(items,
                     new MenuOptions { Rect = new Rect(UiKit.VirtualWidth - 146, 8, 138, items.Length * 26 + 16), Cancel = true });
                 int i = _ui.Choice;
-                if (i == -1 || i == 5) break;
+                if (i == -1 || i == 6) break;
                 if (i == 0) yield return ArenaPartyMenu();
                 else if (i == 1) yield return ArenaBagMenu();
                 else if (i == 2) yield return _ui.DexScreen(_localState);
                 else if (i == 3) { SyncState(); yield return _ui.Say("저장했다!", 500); }
-                else { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
+                else if (i == 4) { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
+                else yield return _ui.ConfirmQuit(() => { EndArenaSession(); });
             }
             EndArenaScene();
         }
