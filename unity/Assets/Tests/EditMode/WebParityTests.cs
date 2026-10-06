@@ -39,17 +39,18 @@ namespace MonsterAdventure.Tests
         {
             var map = WorldMap.Generate();
             var rows = _golden["map"].Select(r => (string)r).ToArray();
-            Assert.AreEqual(WorldMap.Height, rows.Length);
+            Assert.AreEqual(WorldMap.GenHeight, rows.Length);
             int mismatches = 0;
             string firstMismatch = null;
-            for (int y = 0; y < WorldMap.Height; y++)
-                for (int x = 0; x < WorldMap.Width; x++)
+            // 웹 지형은 북쪽 확장 구역 아래(y + NorthExtension)에 그대로 붙어 있다.
+            for (int y = 0; y < WorldMap.GenHeight; y++)
+                for (int x = 0; x < WorldMap.GenWidth; x++)
                 {
                     char c = rows[y][x];
                     int expected = c <= '9' ? c - '0' : c - 'a' + 10;
-                    if ((int)map[x, y] == expected) continue;
+                    if ((int)map[x, y + WorldMap.NorthExtension] == expected) continue;
                     mismatches++;
-                    firstMismatch ??= $"({x},{y}) 웹={expected} C#={(int)map[x, y]}";
+                    firstMismatch ??= $"({x},{y}) 웹={expected} C#={(int)map[x, y + WorldMap.NorthExtension]}";
                 }
             Assert.AreEqual(0, mismatches, $"불일치 {mismatches}칸, 첫 불일치 {firstMismatch}");
         }
@@ -58,7 +59,7 @@ namespace MonsterAdventure.Tests
         public void AreaNames_MatchWeb()
         {
             foreach (var a in _golden["areas"])
-                Assert.AreEqual((string)a["name"], WorldMap.AreaName((int)a["x"], (int)a["y"]), $"({a["x"]},{a["y"]})");
+                Assert.AreEqual((string)a["name"], WorldMap.AreaName((int)a["x"], (int)a["y"] + WorldMap.NorthExtension), $"({a["x"]},{a["y"]})");
         }
 
         [Test]
@@ -136,7 +137,7 @@ namespace MonsterAdventure.Tests
                 foreach (var c in _golden[key])
                 {
                     var rng = new ScriptedRng(Rolls(c["rolls"]));
-                    var m = WildEncounter.Generate(_data, (int)c["x"], (int)c["y"], rng, water);
+                    var m = WildEncounter.Generate(_data, (int)c["x"], (int)c["y"] + WorldMap.NorthExtension, rng, water);   // 웹 좌표 → 이 맵 좌표
                     string label = $"[{key}] ({c["x"]},{c["y"]}) rolls[{c["rolls"]}]";
                     Assert.AreEqual((int)c["id"], m.SpeciesId, label + " 종족");
                     Assert.AreEqual((int)c["lv"], m.Level, label + " 레벨");

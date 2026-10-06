@@ -37,7 +37,7 @@ namespace MonsterAdventure
                 Tile.Path => (int)(h * 20) + 100 * (int)(h * 31 % 26) + 10000 * (int)(h * 13 % 26),
                 Tile.Flower => GrassKey(h) * 4 + (int)(h * 4),
                 Tile.Wall or Tile.CenterDoor or Tile.ShopDoor or Tile.CenterRoof or Tile.ShopRoof or Tile.Water
-                    or Tile.SchoolRoof or Tile.SchoolDoor => 0,
+                    or Tile.SchoolRoof or Tile.SchoolDoor or Tile.AptRoof or Tile.AptWall => 0,
                 _ => GrassKey(h),   // 잔디
             };
             var key = (tile, variant);
@@ -121,6 +121,25 @@ namespace MonsterAdventure
                 case Tile.CenterRoof: case Tile.ShopRoof: case Tile.SchoolRoof:
                     p.Rect(0, 0, Size, Size, t == Tile.CenterRoof ? C("#3fa858") : t == Tile.ShopRoof ? C("#e0523e") : C("#3f6ea8"));
                     for (int i = 0; i < 4; i++) p.Rect(0, i * 8 + 6, Size, 2, C("#000000", .15f));
+                    break;
+                case Tile.AptRoof:
+                    // 아파트 옥상: 회색 지붕 + 짙은 가장자리
+                    p.Rect(0, 0, Size, Size, C("#8e96a8"));
+                    p.Rect(0, 0, Size, 3, C("#5f6678"));
+                    p.Rect(0, Size - 3, Size, 3, C("#5f6678"));
+                    for (int i = 0; i < 3; i++) p.Rect(0, i * 9 + 7, Size, 1, C("#000000", .12f));
+                    break;
+                case Tile.AptWall:
+                    // 아파트 외벽: 연한 베이지 바탕에 창문 두 줄, 아래쪽엔 어두운 띠
+                    p.Rect(0, 0, Size, Size, C("#e4dccb"));
+                    foreach (var wx in new[] { 5, 18 })
+                        foreach (var wy in new[] { 4, 17 })
+                        {
+                            p.Rect(wx, wy, 9, 9, C("#6fa9d8"));
+                            p.Rect(wx + 4, wy, 1, 9, C("#ffffff"));
+                            p.Rect(wx, wy + 4, 9, 1, C("#ffffff"));
+                        }
+                    p.Rect(0, Size - 2, Size, 2, C("#000000", .12f));
                     break;
                 case Tile.Flower:
                     var col = new[] { "#ff6f91", "#ffd84a", "#ffffff", "#b58cff" }[(int)(h * 4)];

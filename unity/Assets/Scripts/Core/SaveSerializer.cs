@@ -18,8 +18,11 @@ namespace MonsterAdventure.Core
             public PlayerState State;
         }
 
-        public static string ToJson(PlayerState state) =>
-            JsonConvert.SerializeObject(new Envelope { Version = Version, State = state }, Formatting.Indented);
+        public static string ToJson(PlayerState state)
+        {
+            state.MapRevision = WorldMap.Revision;   // 지금 X, Y 는 현재 지도 좌표계의 값이다
+            return JsonConvert.SerializeObject(new Envelope { Version = Version, State = state }, Formatting.Indented);
+        }
 
         public static PlayerState FromJson(GameData data, string json)
         {
@@ -47,6 +50,9 @@ namespace MonsterAdventure.Core
             s.QuizAttempts = Math.Max(0, s.QuizAttempts);
             s.PlayerName ??= "";
             s.TotalPlaySeconds = Math.Max(0, s.TotalPlaySeconds);
+            // 북쪽으로 지도가 늘어나기 전에 저장한 위치는 같은 땅에 서 있도록 y 를 내려 준다.
+            if (s.MapRevision < 1) s.Y += WorldMap.NorthExtension;
+            s.MapRevision = WorldMap.Revision;
             if (!WorldMap.InBounds(s.X, s.Y)) { s.X = WorldMap.VillageX; s.Y = WorldMap.VillageY + 1; }
             return true;
         }
