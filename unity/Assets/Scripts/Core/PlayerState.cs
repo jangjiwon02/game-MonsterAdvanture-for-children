@@ -22,6 +22,8 @@ namespace MonsterAdventure.Core
         public HashSet<int> Dex = new HashSet<int>();
         public int X = WorldMap.VillageX;
         public int Y = WorldMap.VillageY + 1;
+        /// <summary>X, Y 가 어느 좌표계의 값인지(WorldMap.Revision). 0 = 북쪽 확장 이전 저장 — 불러올 때 SaveSerializer 가 y 를 옮겨 준다.</summary>
+        public int MapRevision;
 
         /// <summary>마지막 접속 시각(UTC). 서버 출석 보너스 판정용.</summary>
         public DateTime LastLoginUtc = DateTime.MinValue;

@@ -187,7 +187,7 @@ namespace MonsterAdventure.Tests
             Assert.AreEqual(1, s.Party.Count);
             Assert.AreEqual(5, s.Party[0].Level);
             Assert.IsTrue(s.Dex.Contains(2));
-            Assert.AreEqual((24, 19), (s.X, s.Y));
+            Assert.AreEqual((WorldMap.VillageX, WorldMap.VillageY + 1), (s.X, s.Y));
         }
 
         [Test]
@@ -214,7 +214,7 @@ namespace MonsterAdventure.Tests
         public void World_SolidTilesBlockAndVillageIsWalkable()
         {
             var map = WorldMap.Generate();
-            Assert.IsFalse(map.IsPassable(0, 0), "테두리는 나무");
+            Assert.IsFalse(map.IsPassable(0, WorldMap.NorthExtension), "웹 지형의 테두리는 나무");
             Assert.IsFalse(map.IsPassable(-1, 5));
             Assert.IsFalse(map.IsPassable(WorldMap.Width, 5));
             Assert.IsTrue(map.IsPassable(WorldMap.VillageX, WorldMap.VillageY + 1), "시작 지점");
@@ -278,11 +278,11 @@ namespace MonsterAdventure.Tests
             var rng = new SystemRng(1234);
             for (int i = 0; i < 400; i++)
             {
-                var near = WildEncounter.Generate(_data, 24, 21, rng);            // 거리 3 (<11)
+                var near = WildEncounter.Generate(_data, 24, 21 + WorldMap.NorthExtension, rng);            // 거리 3 (<11)
                 Assert.AreNotEqual(14, near.SpeciesId);
             }
             // 거리 >= 11 이면 풀이 11종으로 늘어난다: 마지막 항목(스르릉, id 18)을 굴림 0.99 로 뽑는다.
-            var far = WildEncounter.Generate(_data, 44, 18, new ScriptedRng(0.5, 0.99));
+            var far = WildEncounter.Generate(_data, 44, 18 + WorldMap.NorthExtension, new ScriptedRng(0.5, 0.99));
             Assert.AreEqual(18, far.SpeciesId);
         }
 
