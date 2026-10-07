@@ -10,7 +10,8 @@ namespace MonsterAdventure.Net
     public sealed class Trainer
     {
         public int Id; public string Name; public int SpeciesId; public int X; public int Y; public NetDirection Dir;
-        public TrainerInfo ToInfo() => new TrainerInfo { Id = Id, Name = Name, SpeciesId = SpeciesId, X = X, Y = Y, Dir = (int)Dir };
+        public int Color;
+        public TrainerInfo ToInfo() => new TrainerInfo { Id = Id, Name = Name, SpeciesId = SpeciesId, X = X, Y = Y, Dir = (int)Dir, Color = Color };
     }
 
     public readonly struct MoveOutcome
@@ -29,9 +30,10 @@ namespace MonsterAdventure.Net
         readonly WorldMap _map;
         readonly Dictionary<int, Trainer> _players = new Dictionary<int, Trainer>();
         readonly Dictionary<int, int> _pendingChallenges = new Dictionary<int, int>();   // targetId -> fromId
+        readonly IRng _rng;
         int _nextId = 1;
 
-        public ArenaState(GameData data, WorldMap map) { _data = data; _map = map; }
+        public ArenaState(GameData data, WorldMap map, IRng rng = null) { _data = data; _map = map; _rng = rng ?? new SystemRng(); }
 
         public IReadOnlyDictionary<int, Trainer> Players => _players;
         public Trainer Get(int id) => _players.TryGetValue(id, out var t) ? t : null;
@@ -45,7 +47,8 @@ namespace MonsterAdventure.Net
             if (speciesId < 0 || speciesId >= _data.Species.Count)
                 throw new ArgumentException($"존재하지 않는 종족이다: {speciesId}");
             var (x, y) = FindSpawn();
-            var t = new Trainer { Id = _nextId++, Name = string.IsNullOrWhiteSpace(name) ? "트레이너" : name, SpeciesId = speciesId, X = x, Y = y, Dir = NetDirection.Down };
+            var color = PlayerLook.PickColor(_players.Values.Select(p => p.Color).ToList(), _rng);   // 겹치지 않는 색(처음 들어온 사람은 기본 빨강)
+            var t = new Trainer { Id = _nextId++, Name = string.IsNullOrWhiteSpace(name) ? "트레이너" : name, SpeciesId = speciesId, X = x, Y = y, Dir = NetDirection.Down, Color = color };
             _players[t.Id] = t;
             return t;
         }
@@ -83,15 +86,13 @@ namespace MonsterAdventure.Net
             return new MoveOutcome(true, nx, ny, dir);
         }
 
-        static bool Adjacent(Trainer a, Trainer b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) == 1;
-
-        /// <summary>도전 신청. 안 되는 이유가 있으면 그 문구, 되면 null.</summary>
+        /// <summary>도전 신청. 안 되는 이유가 있으면 그 문구, 되면 null.
+        /// 같은 방에 있으면 어디에 있든 신청할 수 있다(월드 메뉴의 "대결 신청" 목록) — 예전엔 바로 옆 칸까지 걸어가야만 했다.</summary>
         public string RequestChallenge(int fromId, int targetId)
         {
             if (fromId == targetId) return "자기 자신에게는 도전할 수 없다!";
             var from = Get(fromId); var target = Get(targetId);
             if (from == null || target == null) return "상대를 찾을 수 없다!";
-            if (!Adjacent(from, target)) return "가까이 다가가야 도전할 수 있다!";
             if (_pendingChallenges.ContainsValue(fromId)) return "이미 다른 도전에 응답을 기다리는 중이다!";
             _pendingChallenges[targetId] = fromId;
             return null;

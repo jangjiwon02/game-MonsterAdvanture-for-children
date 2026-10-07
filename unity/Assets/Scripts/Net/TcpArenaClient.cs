@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Sockets;
 using System.Threading;
+using MonsterAdventure.Core;
 using Newtonsoft.Json.Linq;
 
 namespace MonsterAdventure.Net
@@ -13,7 +14,7 @@ namespace MonsterAdventure.Net
     /// </summary>
     public sealed class TcpArenaClient : IDisposable
     {
-        readonly TcpClient _client = new TcpClient();
+        TcpClient _client = new TcpClient(AddressFamily.InterNetwork);
         NetworkStream _stream;
         Thread _readThread;
 
@@ -22,17 +23,45 @@ namespace MonsterAdventure.Net
 
         public bool IsConnected { get; private set; }
 
-        /// <summary>연결하고 hello 를 보낸다. 실패하면 예외를 던진다(호출자가 try/catch 로 사용자에게 알린다).</summary>
-        public void Connect(string host, int port, string name, int starterSpeciesId, int timeoutMs = 4000)
+        /// <summary>연결하고 hello 를 보낸다. 실패하면 예외를 던진다(호출자가 try/catch 로 사용자에게 알린다).
+        /// 폰의 Wi-Fi 는 처음 보내는 패킷(ARP 확인·절전 해제)이 유실돼 첫 연결이 시간 초과 나는 일이 흔하다 — 그때마다
+        /// 사용자가 메뉴로 돌아가 다시 시도하던 것을, 여기서 새 소켓으로 자동 재시도해 한 번에 붙게 한다.
+        /// timeoutMs 는 한 번의 시도당 대기 시간이다.</summary>
+        public void Connect(string host, int port, string name, int starterSpeciesId, int timeoutMs = 2000, string stateJson = null, int attempts = 3)
         {
-            var result = _client.BeginConnect(host, port, null, null);
-            if (!result.AsyncWaitHandle.WaitOne(timeoutMs)) throw new TimeoutException($"{host}:{port} 에 연결할 수 없다(시간 초과).");
-            _client.EndConnect(result);
+            Exception last = null;
+            for (int attempt = 0; attempt < attempts; attempt++)
+            {
+                if (attempt > 0) Thread.Sleep(300);
+                // 한 번 쓴 소켓은 연결 시도에 실패하면 다시 못 쓰므로 시도마다 새로 만든다. IPv4 로 고정해 이중 스택 소켓의 지연을 피한다.
+                var client = new TcpClient(AddressFamily.InterNetwork) { NoDelay = true };   // 작은 이동 메시지가 Nagle 에 묶여 늦게 나가면 상대 화면에서 끊겨 보인다
+                try
+                {
+                    var result = client.BeginConnect(host, port, null, null);
+                    if (!result.AsyncWaitHandle.WaitOne(timeoutMs))
+                    {
+                        try { client.Close(); } catch (Exception) { /* 무시 */ }
+                        last = new TimeoutException($"{host}:{port} 에 연결할 수 없다(시간 초과).");
+                        continue;
+                    }
+                    client.EndConnect(result);
+                }
+                catch (Exception e)
+                {
+                    try { client.Close(); } catch (Exception) { /* 무시 */ }
+                    last = e;
+                    continue;
+                }
+                _client = client;
+                last = null;
+                break;
+            }
+            if (last != null) throw last;
             _stream = _client.GetStream();
             IsConnected = true;
             _readThread = new Thread(ReadLoop) { IsBackground = true, Name = "ArenaClient.Read" };
             _readThread.Start();
-            SendRaw(NetMsgType.Hello, new HelloMessage { Name = name, SpeciesId = starterSpeciesId });
+            SendRaw(NetMsgType.Hello, new HelloMessage { Name = name, SpeciesId = starterSpeciesId, StateJson = stateJson });
         }
 
         void ReadLoop()
@@ -57,7 +86,8 @@ namespace MonsterAdventure.Net
         public void SendMove(NetDirection dir) => SendRaw(NetMsgType.Move, new MoveMessage { Dir = (int)dir });
         public void SendChallenge(int targetId) => SendRaw(NetMsgType.ChallengeRequest, new ChallengeRequestMessage { TargetId = targetId });
         public void SendChallengeResponse(bool accept) => SendRaw(NetMsgType.ChallengeResponse, new ChallengeResponseMessage { Accept = accept });
-        public void SendDuelAction(string moveId) => SendRaw(NetMsgType.DuelAction, new DuelActionMessage { MoveId = moveId });
+        public void SendDuelAction(BattleAction action) => SendRaw(NetMsgType.DuelAction, DuelActionMessage.From(action));
+        public void SendDuelReplace(int partyIndex) => SendRaw(NetMsgType.DuelReplace, new DuelReplaceMessage { PartyIndex = partyIndex });
         public void SendUpdateAccount(string stateJson) => SendRaw(NetMsgType.UpdateAccount, new UpdateAccountMessage { StateJson = stateJson });
 
         void SendRaw(string type, object payload)

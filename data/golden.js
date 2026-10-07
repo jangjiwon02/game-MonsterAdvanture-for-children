@@ -16,10 +16,10 @@ const code = [
   cut('function calcDamage', 'async function useMove'), // 데미지·적 AI
   `
   // startWild(브라우저 전투 호출 제외)와 동일한 야생 몬스터 결정 로직
-  function wildFor(x, y) {
+  function wildFor(x, y, water) {
     const d = Math.hypot(x - VX, y - VY);
     const lv = clamp(2 + Math.floor(d / 3.4) + rnd(-1, 1), 2, 40);
-    let pool = BASE_IDS.filter(id => d >= 11 || SP[id].n !== '뿔불이');
+    let pool = wildPool(d, water);
     let id = pick(pool);
     while (SP[id].ev && lv >= SP[id].ev[0]) id = SP[id].ev[1];
     return { id, lv };
@@ -56,6 +56,10 @@ const code = [
       [24, 21, [.5, .5]], [24, 21, [0, 0]], [24, 21, [.99, .99]], [30, 22, [.5, .2]], [34, 12, [.5, .9]], [44, 33, [.99, .3]],
       [40, 30, [.5, .1]], [40, 30, [.5, .95]], [12, 33, [0.4, .55]], [3, 3, [.3, .7]], [18, 22, [.9, .05]],
     ].map(([x, y, rolls]) => { q(...rolls); return { x, y, rolls, ...wildFor(x, y) }; }),
+    // 물 타일에서의 조우: 물 타입만 나온다(풀숲 풀에서는 물 타입이 빠진다).
+    wildWater: [
+      [30, 10, [.5, .5]], [30, 10, [0, 0]], [30, 10, [.99, .99]], [44, 33, [.5, .2]], [8, 30, [.9, .6]], [24, 3, [.3, .99]],
+    ].map(([x, y, rolls]) => { q(...rolls); return { x, y, rolls, water: true, ...wildFor(x, y, true) }; }),
     // 명세 공식: p = clamp(rate * (1 - 0.6 * hp/maxHp) + 0.08, 0.05, 0.95)
     catchP: [[0.5, 30, 30], [0.5, 15, 30], [0.5, 1, 30], [0.3, 30, 30], [0.25, 60, 60], [0.6, 5, 40], [0.6, 1, 200], [0.6, 200, 200]]
       .map(([rate, hp, mhp]) => ({ rate, hp, mhp, p: clamp(rate * (1 - .6 * (hp / mhp)) + .08, .05, .95) })),

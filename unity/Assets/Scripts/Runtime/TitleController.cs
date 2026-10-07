@@ -29,13 +29,14 @@ namespace MonsterAdventure
         {
             _ui.Data = _data;
             _ui.DrawScene = DrawScene;
-            var menuRect = new Rect(UiKit.VirtualWidth / 2f - 75, 146, 150, 3 * 26 + 16);
+            var menuRect = new Rect(UiKit.VirtualWidth / 2f - 75, 146, 150, 4 * 26 + 16);
             while (Result == null && !WantsArena)
             {
                 // 저장이 없으면 '이어하기'는 회색으로 두고 고를 수 없다.
-                yield return _ui.Choose(new[] { "새 게임", "이어하기", "함께하기 (LAN)" },
+                yield return _ui.Choose(new[] { "새 게임", "이어하기", "함께하기 (LAN)", "게임 종료" },
                     new MenuOptions { Rect = menuRect, Disabled = SaveStore.Exists ? null : new HashSet<int> { 1 } });
 
+                if (_ui.Choice == 3) { yield return _ui.ConfirmQuit(); continue; }
                 if (_ui.Choice == 2) { WantsArena = true; continue; }
                 if (_ui.Choice == 1)
                 {

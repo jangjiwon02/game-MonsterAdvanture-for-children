@@ -60,13 +60,15 @@ namespace MonsterAdventure
             }
         }
 
-        /// <summary>이 기기에서 처음 실행됐을 때만(=한 번만) 설치 기록을 보낸다.</summary>
+        /// <summary>이 기기의 설치 기록을 서버가 "받았다"고 확인해 줄 때까지, 실행할 때마다 다시 시도한다.
+        /// (예전엔 보내기도 전에 '보냈음' 표시부터 해서, 전송이 꺼져 있던 빌드나 오프라인 첫 실행을 거친 기기는
+        /// 영원히 설치 기록이 안 남았다.)</summary>
         public static void SendInstallIfFirstRun()
         {
+            if (string.IsNullOrEmpty(EndpointUrl)) return;
             if (PlayerPrefs.GetInt(InstallSentKey, 0) == 1) return;
-            PlayerPrefs.SetInt(InstallSentKey, 1);
-            PlayerPrefs.Save();
-            Send("install", $"\"device_id\":\"{Esc(DeviceId)}\",\"app_version\":\"{Esc(Application.version)}\"");
+            Send("install", $"\"device_id\":\"{Esc(DeviceId)}\",\"app_version\":\"{Esc(Application.version)}\"",
+                onSuccess: () => { PlayerPrefs.SetInt(InstallSentKey, 1); PlayerPrefs.Save(); });
         }
 
         public static void SendSessionStart(string playerName) =>
@@ -80,24 +82,58 @@ namespace MonsterAdventure
             Send("progress", $"\"device_id\":\"{Esc(DeviceId)}\",\"player_name\":\"{Esc(playerName)}\"," +
                 $"\"level\":{level},\"dex_count\":{dexCount},\"money\":{money},\"total_play_seconds\":{totalPlaySeconds:F0}");
 
-        static void Send(string eventName, string fieldsJson)
+        // 요청은 한 번에 하나씩 순서대로 보낸다. 동시에 여러 개를 쏘면 Apps Script 가 각각을 병렬로 처리하다가
+        // '최신현황' 탭의 같은 이름 줄을 두 번 만들어 버릴 수 있다(세션 시작·진행상황이 거의 동시에 나가는 경우).
+        const int MaxQueued = 30;
+        sealed class Pending { public string EventName, Json; public Action OnSuccess; }
+        static readonly System.Collections.Generic.Queue<Pending> Queue = new System.Collections.Generic.Queue<Pending>();
+        static bool _draining;
+
+        static void Send(string eventName, string fieldsJson, Action onSuccess = null)
         {
             if (string.IsNullOrEmpty(EndpointUrl)) return;
-            Runner.StartCoroutine(Post($"{{\"event\":\"{eventName}\",{fieldsJson}}}"));
+            if (Queue.Count >= MaxQueued) return;   // 오프라인이 오래 이어질 때 메모리가 쌓이지 않게(진행상황은 곧 다시 나간다)
+            Queue.Enqueue(new Pending { EventName = eventName, Json = $"{{\"event\":\"{eventName}\",{fieldsJson}}}", OnSuccess = onSuccess });
+            if (!_draining) Runner.StartCoroutine(Drain());
         }
 
-        static IEnumerator Post(string json)
+        static IEnumerator Drain()
+        {
+            _draining = true;
+            while (Queue.Count > 0)
+            {
+                var p = Queue.Dequeue();
+                yield return Post(p.EventName, p.Json, p.OnSuccess);
+            }
+            _draining = false;
+        }
+
+        static IEnumerator Post(string eventName, string json, Action onSuccess)
         {
             using (var req = new UnityWebRequest(EndpointUrl, "POST"))
             {
                 req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
-                req.timeout = 8;
+                req.timeout = 15;   // 학교 와이파이처럼 느린 망에서도 Apps Script(리다이렉트 한 번 포함)가 끝날 시간을 준다
                 yield return req.SendWebRequest();
-                // 실패해도 조용히 넘어간다 — 원격 통계 전송은 절대 게임 플레이를 막으면 안 된다.
+
+                // 게임 플레이는 절대 막지 않는다(실패해도 조용히 넘어감). 다만 원인 추적이 되도록 로그는 남긴다 —
+                // adb logcat -s Unity 로 "[Telemetry]" 를 보면 어느 기기에서 왜 실패했는지 알 수 있다.
+                // Apps Script 는 처리를 끝내고 결과를 script.googleusercontent.com 으로 302 리다이렉트해서 돌려준다.
+                // 리다이렉트를 끝까지 따라가 {"ok":true} 를 받았거나, 그 302 응답 자체를 받았으면 "전달됨"으로 본다
+                // (계정 로그인 페이지로 튕기는 302 — 배포 접근 권한을 '전체'로 안 한 경우 — 는 googleusercontent 가 아니라서 실패로 남는다).
+                string body = req.downloadHandler.text ?? "";
+                string location = req.GetResponseHeader("Location") ?? "";
+                bool ok = (req.responseCode == 200 && body.Contains("\"ok\":true"))
+                          || (req.responseCode == 302 && location.Contains("googleusercontent.com"));
+                if (ok) onSuccess?.Invoke();
+                else Debug.LogWarning($"[Telemetry] {eventName} 전송 실패: result={req.result} code={req.responseCode} " +
+                                      $"error={req.error} body={Trunc(req.downloadHandler.text)}");
             }
         }
+
+        static string Trunc(string s) => string.IsNullOrEmpty(s) ? "" : (s.Length > 120 ? s.Substring(0, 120) : s);
 
         static string Esc(string s) => string.IsNullOrEmpty(s) ? "" : s.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }

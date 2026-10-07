@@ -187,7 +187,7 @@ namespace MonsterAdventure.Tests
             Assert.AreEqual(1, s.Party.Count);
             Assert.AreEqual(5, s.Party[0].Level);
             Assert.IsTrue(s.Dex.Contains(2));
-            Assert.AreEqual((24, 19), (s.X, s.Y));
+            Assert.AreEqual((WorldMap.VillageX, WorldMap.VillageY + 1), (s.X, s.Y));
         }
 
         [Test]
@@ -214,7 +214,7 @@ namespace MonsterAdventure.Tests
         public void World_SolidTilesBlockAndVillageIsWalkable()
         {
             var map = WorldMap.Generate();
-            Assert.IsFalse(map.IsPassable(0, 0), "테두리는 나무");
+            Assert.IsFalse(map.IsPassable(0, WorldMap.NorthExtension), "웹 지형의 테두리는 나무");
             Assert.IsFalse(map.IsPassable(-1, 5));
             Assert.IsFalse(map.IsPassable(WorldMap.Width, 5));
             Assert.IsTrue(map.IsPassable(WorldMap.VillageX, WorldMap.VillageY + 1), "시작 지점");
@@ -244,16 +244,45 @@ namespace MonsterAdventure.Tests
         }
 
         [Test]
+        public void Water_IsWalkable_AndEncountersAt14Percent()
+        {
+            var map = WorldMap.Generate();
+            int water = 0;
+            for (int y = 0; y < WorldMap.Height; y++)
+                for (int x = 0; x < WorldMap.Width; x++)
+                    if (map[x, y] == Tile.Water) { water++; Assert.IsTrue(map.IsPassable(x, y), $"물({x},{y})은 걸을 수 있어야 한다"); }
+            Assert.Greater(water, 0, "맵에 물 타일이 있어야 이 테스트가 의미가 있다");
+
+            Assert.IsTrue(WildEncounter.ShouldEncounter(Tile.Water, new ScriptedRng(0.139)));
+            Assert.IsFalse(WildEncounter.ShouldEncounter(Tile.Water, new ScriptedRng(0.14)));
+        }
+
+        [Test]
+        public void WildPool_WaterTypesOnlyInWater_AndNeverInGrass()
+        {
+            foreach (double d in new[] { 3.0, 15.0 })
+            {
+                var grass = WildEncounter.Pool(_data, d, water: false);
+                var water = WildEncounter.Pool(_data, d, water: true);
+                Assert.IsNotEmpty(grass);
+                Assert.IsNotEmpty(water);
+                Assert.IsTrue(grass.TrueForAll(s => s.Type != "water"), "풀숲엔 물 타입이 안 나온다");
+                Assert.IsTrue(water.TrueForAll(s => s.Type == "water"), "물에는 물 타입만 나온다");
+                Assert.IsTrue(water.TrueForAll(s => s.Stage == 1), "야생 후보는 기본형만");
+            }
+        }
+
+        [Test]
         public void Wild_NearVillageNeverSpawnsHornFireFamily_ButFarAwayCan()
         {
             var rng = new SystemRng(1234);
             for (int i = 0; i < 400; i++)
             {
-                var near = WildEncounter.Generate(_data, 24, 21, rng);            // 거리 3 (<11)
+                var near = WildEncounter.Generate(_data, 24, 21 + WorldMap.NorthExtension, rng);            // 거리 3 (<11)
                 Assert.AreNotEqual(14, near.SpeciesId);
             }
             // 거리 >= 11 이면 풀이 11종으로 늘어난다: 마지막 항목(스르릉, id 18)을 굴림 0.99 로 뽑는다.
-            var far = WildEncounter.Generate(_data, 44, 18, new ScriptedRng(0.5, 0.99));
+            var far = WildEncounter.Generate(_data, 44, 18 + WorldMap.NorthExtension, new ScriptedRng(0.5, 0.99));
             Assert.AreEqual(18, far.SpeciesId);
         }
 

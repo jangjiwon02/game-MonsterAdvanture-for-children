@@ -20,16 +20,16 @@ namespace MonsterAdventure
         float _elapsed;
         bool _moving;
 
-        public void Init(int id, string name, int x, int y, Direction facing)
+        public void Init(int id, string name, int x, int y, Direction facing, int color = 0)
         {
             Id = id;
             DisplayName = name;
-            _facingSprites = PlayerArt.Build();
+            _facingSprites = PlayerArt.Build(color);
             var go = new GameObject("Sprite", typeof(SpriteRenderer));
             go.transform.SetParent(transform, false);
             _renderer = go.GetComponent<SpriteRenderer>();
             _renderer.sortingOrder = WorldView.PlayerSortingOrder;
-            _renderer.color = new Color(0.82f, 0.88f, 1f);   // 살짝 푸른 색조로 「다른 사람」임을 구분
+            // 예전엔 살짝 푸른 색조로만 「다른 사람」을 구분했는데, 이제 사람마다 옷 색이 달라서 색조는 필요 없다.
 
             var tagGo = new GameObject("NameTag", typeof(TextMesh));
             tagGo.transform.SetParent(transform, false);

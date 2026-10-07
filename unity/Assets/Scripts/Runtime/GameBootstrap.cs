@@ -40,6 +40,10 @@ namespace MonsterAdventure
             Map = WorldMap.Generate();
             WorldMap.AddChungjuLandmarks(Map);
 
+            // 안드로이드는 따로 정하지 않으면 30fps 로 돈다 — 한 칸(0.14초)이 4프레임뿐이라 걸을 때 화면이 끊겨 보인다.
+            Application.targetFrameRate = 60;
+            QualitySettings.vSyncCount = 0;
+
             gameObject.AddComponent<GameInput>();
             gameObject.AddComponent<TouchControls>();   // 모바일 터치 방향 패드 + Z/X — Arena 모드도 이 GameInput 을 공유하므로 자동으로 적용된다
             Ui = gameObject.AddComponent<GameUi>();
@@ -86,56 +90,57 @@ namespace MonsterAdventure
             yield return GameUi.Tween(.3f, p => Ui.Fade = 1f - p);
         }
 
-        const string NotOnRosterLabel = "명단에 없음(직접 입력)";
-
-        /// <summary>원격 진행상황 기록용 이름이 아직 없으면(예전 저장이거나 첫 실행) 명단에서 골라서 저장에 남긴다.
-        /// 명단에 없는 제3자는 "직접 입력"을 골라 이름을 타이핑하되, 실제 학생 이름과 안 겹치도록 기기ID 일부를
-        /// 붙여서 구분한다(스프레드시트의 최신현황 탭은 이름 하나당 한 줄만 유지하므로, 겹치면 서로 덮어써 버린다).</summary>
+        /// <summary>원격 진행상황 기록·LAN 접속에 쓰는 이름이 아직 없으면(예전 저장이거나 첫 실행) 명단에서 골라 저장에 남긴다.</summary>
         IEnumerator EnsurePlayerName()
         {
             if (!string.IsNullOrEmpty(State.PlayerName)) yield break;
-
-            var names = new List<string> { Roster.Teacher };
-            names.AddRange(Roster.Students);
-            names.Add(NotOnRosterLabel);
-            yield return Ui.Say("진행상황 기록을 위해 명단에서 이름을 골라 주세요.");
-            yield return Ui.Choose(names, new MenuOptions
-            {
-                Rect = new Rect(UiKit.VirtualWidth / 2f - 140, 70, 280, 7 * 26 + 16),
-                Cols = 2, Full = true, Prompt = "누구인가요?",
-            });
-            int choice = Mathf.Max(0, Ui.Choice);
-
-            if (names[choice] == NotOnRosterLabel)
-            {
-                string typed = null;
-                yield return Ui.EnterText("이름을 입력하세요", 10, n => typed = n?.Trim());
-                string tag = TelemetryClient.DeviceId.Substring(0, 6);
-                State.PlayerName = string.IsNullOrEmpty(typed) ? $"손님({tag})" : $"{typed}({tag})";
-            }
-            else
-            {
-                State.PlayerName = names[choice];
-            }
+            yield return PlayerIdentity.EnsureName(Ui, State);
             SaveStore.Save(State);
         }
 
+        const float HeartbeatSeconds = 60f;
         DateTime _sessionStartUtc;
+        bool _sessionOpen;
+        Coroutine _heartbeat;
 
         void BeginSession()
         {
+            if (State == null || _sessionOpen) return;
+            _sessionOpen = true;
             _sessionStartUtc = DateTime.UtcNow;
             TelemetryClient.SendSessionStart(State.PlayerName);
+            SendProgressSnapshot();   // 첫 저장을 기다리지 않고 바로 '최신현황'에 이름이 올라오게 한다
+            _heartbeat = StartCoroutine(HeartbeatLoop());
         }
 
         void EndSession()
         {
-            if (State == null) return;
+            if (State == null || !_sessionOpen) return;
+            _sessionOpen = false;
+            if (_heartbeat != null) { StopCoroutine(_heartbeat); _heartbeat = null; }
             double elapsed = (DateTime.UtcNow - _sessionStartUtc).TotalSeconds;
             if (elapsed <= 0) return;
             State.TotalPlaySeconds += elapsed;
             SaveStore.Save(State);
             TelemetryClient.SendSessionEnd(State.PlayerName, elapsed, State.TotalPlaySeconds);
+        }
+
+        /// <summary>플레이 중에는 1분마다 현재 상태를 보낸다. 앱이 백그라운드에서 강제 종료되면 session_end 가 못 나가는
+        /// 경우가 있는데, 그래도 '마지막 접속'과 누적 플레이 시간이 최대 1분 오차로 남는다.</summary>
+        IEnumerator HeartbeatLoop()
+        {
+            for (;;)
+            {
+                yield return new WaitForSecondsRealtime(HeartbeatSeconds);
+                SendProgressSnapshot();
+            }
+        }
+
+        void SendProgressSnapshot()
+        {
+            double total = State.TotalPlaySeconds + (_sessionOpen ? (DateTime.UtcNow - _sessionStartUtc).TotalSeconds : 0);
+            TelemetryClient.SendProgress(State.PlayerName,
+                State.Party.Count > 0 ? State.Party[0].Level : 0, State.Dex.Count, State.Money, total);
         }
 
         void OnApplicationPause(bool paused)
@@ -202,7 +207,7 @@ namespace MonsterAdventure
             // 눈에 보이는 스폰을 끄면(UseVisibleSpawns=false) 예전처럼 풀숲 한 칸 이동마다 14% 로 야생 몬스터가 나타난다.
             else if (!UseVisibleSpawns && WildEncounter.ShouldEncounter(tile, Rng))
             {
-                var wild = WildEncounter.Generate(Data, x, y, Rng);
+                var wild = WildEncounter.Generate(Data, x, y, Rng, water: tile == Tile.Water);
                 wild.RollIndividualValues(Data);   // 야생 개체마다 실제로 개체값이 다르다(웹 골든 테스트와 무관한 별도 단계)
                 StartCoroutine(EncounterRoutine(wild));
             }
@@ -317,17 +322,18 @@ namespace MonsterAdventure
             BeginScene();
             for (;;)
             {
-                var items = new[] { "몬스터", "가방", "박스", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "닫기" };
+                var items = new[] { "몬스터", "가방", "박스", "도감", "저장", $"소리: {(Sfx.Muted ? "끔" : "켬")}", "게임 종료", "닫기" };
                 yield return Ui.Choose(items,
                     new MenuOptions { Rect = new Rect(UiKit.VirtualWidth - 146, 8, 138, items.Length * 26 + 16), Cancel = true });
                 int i = Ui.Choice;
-                if (i == -1 || i == 6) break;
+                if (i == -1 || i == 7) break;
                 if (i == 0) yield return PartyMenu();
                 else if (i == 1) yield return BagMenu();
                 else if (i == 2) yield return BoxMenu();
                 else if (i == 3) yield return Ui.DexScreen(State);
                 else if (i == 4) yield return Ui.Say(SaveStore.Save(State) ? "저장했다!" : "저장에 실패했다...", 500);
-                else { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
+                else if (i == 5) { Sfx.Muted = !Sfx.Muted; Bgm.SetMuted(Sfx.Muted); }
+                else yield return Ui.ConfirmQuit(() => { EndSession(); });   // 접속 기록(세션 종료)을 먼저 내보낸 뒤 끈다
             }
             EndScene();
         }
