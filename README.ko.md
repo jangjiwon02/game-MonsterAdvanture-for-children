@@ -6,7 +6,7 @@
 
 [![Unity](https://img.shields.io/badge/Unity-6000.6.2f1-000000?logo=unity&logoColor=white)](unity/ProjectSettings/ProjectVersion.txt)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20Web-blue)](#시작하기)
-[![Reference](https://img.shields.io/badge/reference%20build-HTML5%20Canvas-F7DF1E)](web/index.html)
+[![Web source](https://img.shields.io/badge/web%20source-HTML5%20Canvas-F7DF1E)](web/index.html)
 
 [Read in English →](README.md)
 
@@ -37,7 +37,7 @@
 - **`web/`** — 단일 HTML 파일로 된 HTML5 Canvas 빌드. 바로 플레이 가능한 참조 구현이며, 동작의 기준(ground truth)입니다.
 - **`unity/`** — 안드로이드(주 타깃)와 Windows Standalone을 대상으로 한 Unity 2D 포팅. 실시간 LAN 멀티플레이가 추가돼 있습니다.
 
-`SPEC.md`에 두 구현이 공유하는 엔진 무관 규칙(능력치 공식, 데미지, 포획 확률, 맵 생성 등)이 문서화돼 있고, 공유 "골든" 테스트로 두 빌드의 동작이 일치하는지 검증합니다.
+[SPEC.md](SPEC.md)에 두 구현이 공유하는 엔진 무관 규칙(능력치 공식, 데미지, 포획 확률, 맵 생성 등)이 문서화돼 있고, 공유 "골든" 테스트로 두 빌드의 동작이 일치하는지 검증합니다.
 
 ---
 
@@ -64,7 +64,7 @@
 | 멀티플레이 전송 | `System.Net.Sockets` 직접 사용 — 길이 프리픽스 JSON over TCP(7777) + UDP 방 탐색(7778) |
 | 게임 데이터 | `data/game-data.json`(종족·기술·상성표), `data/extract.js`로 생성 |
 | 텔레메트리 백엔드 | Google Apps Script + Google Sheets |
-| 대상 플랫폼 | 안드로이드(`com.chungju.monsteradventure`), Windows Standalone |
+| 대상 플랫폼 | 웹 브라우저(참조 빌드), 안드로이드(`com.chungju.monsteradventure`)·Windows Standalone(Unity 포팅) |
 
 Mirror·Photon 같은 외부 네트워킹 미들웨어 없이, LAN 레이어는 직접 구현했고 EditMode 소켓 테스트로 검증합니다.
 
@@ -96,13 +96,20 @@ Mirror·Photon 같은 외부 네트워킹 미들웨어 없이, LAN 레이어는 
 
 ### 웹 버전 플레이
 
-`web/index.html`을 브라우저에서 바로 열거나, 저장소 루트를 아무 정적 파일 서버로 서빙하면 됩니다.
+저장소를 ZIP으로 다운로드해 압축을 풀거나, 다음 명령으로 clone합니다.
+
+```bash
+git clone https://github.com/jangjiwon02/game-MonsterAdvanture-for-children.git
+cd game-MonsterAdvanture-for-children
+```
+
+다운로드한 `web/index.html`을 브라우저에서 바로 열거나, 저장소 루트를 정적 파일 서버로 서빙하면 됩니다. 상단의 **Web source** 배지는 GitHub의 소스 파일로 연결되며, 게임 실행 링크가 아닙니다.
 
 ### Unity 프로젝트 열기
 
 1. **Unity Hub** + **에디터 6000.6.2f1** 설치 (APK를 빌드하려면 Android Build Support 모듈도 추가)
 2. `unity/` 폴더를 Unity 프로젝트로 엽니다.
-3. 메인 씬을 열고 **Play**를 누릅니다.
+3. Project 창에서 `Assets/Scenes/Chungju.unity`를 열고 **Play**를 누릅니다.
 
 ### 테스트 실행
 
@@ -122,13 +129,13 @@ Unity -batchmode -runTests -testPlatform EditMode -projectPath unity -testResult
 - **방 찾기** — 열려 있는 방을 자동으로 찾아 목록에서 고릅니다.
 - **주소로 접속 (고급)** — 브로드캐스트를 막는 네트워크를 위해 호스트 IP를 직접 입력합니다.
 
-전체 설계 과정과 알려진 한계는 `SPEC.md`의 "멀티플레이(LAN)" 항목들을 참고하세요.
+전체 설계 과정과 알려진 한계는 [SPEC.md](SPEC.md)의 "멀티플레이(LAN)" 항목들을 참고하세요.
 
 ---
 
 ## 게임플레이 스펙
 
-`SPEC.md`는 능력치 공식, 데미지 계산, 턴 진행, 포획/도망 확률, 월드 생성, LAN 프로토콜까지 게임 규칙의 기준이 되는 엔진 무관 문서입니다. 웹 빌드와 Unity 빌드 모두 이 문서와 정확히 일치해야 하며, 공유 "골든" 테스트로 이를 검증합니다.
+[SPEC.md](SPEC.md)는 능력치 공식, 데미지 계산, 턴 진행, 포획/도망 확률, 월드 생성, LAN 프로토콜까지 게임 규칙의 기준이 되는 엔진 무관 문서입니다. 웹 빌드와 Unity 빌드 모두 이 문서와 정확히 일치해야 하며, 공유 "골든" 테스트로 이를 검증합니다.
 
 ---
 
@@ -136,7 +143,7 @@ Unity -batchmode -runTests -testPlatform EditMode -projectPath unity -testResult
 
 Unity 빌드는 선택적으로 설치/접속/진행상황 이벤트를 Google 스프레드시트로 보낼 수 있습니다(교실에서 학생들이 설치·플레이를 잘 하고 있는지 확인하는 용도). **기본값은 꺼짐**(엔드포인트가 설정돼 있지 않음)이며, 꺼져 있거나 네트워크가 없어도 게임 플레이에는 전혀 영향이 없습니다.
 
-이 기능은 미성년자의 실명과 플레이 기록을 다룹니다 — 사용하기 전에 `telemetry/README.md`를 꼭 읽고, 대상 스프레드시트 접근 권한을 본인만으로 제한하세요.
+이 기능은 미성년자의 실명과 플레이 기록을 다룹니다 — 사용하기 전에 [telemetry/README.md](telemetry/README.md)를 꼭 읽고, 대상 스프레드시트 접근 권한을 본인만으로 제한하세요.
 
 ---
 
@@ -144,11 +151,13 @@ Unity 빌드는 선택적으로 설치/접속/진행상황 이벤트를 Google �
 
 ```bash
 git checkout -b feature/amazing-feature
+# 파일을 수정한 뒤, 변경한 파일의 실제 경로를 지정하세요.
+git add path/to/changed-file
 git commit -m "Add amazing feature"
 git push origin feature/amazing-feature
 ```
 
-이후 Pull Request를 열어 주세요. `web/`과 `unity/`는 항상 `SPEC.md`와 동작이 일치해야 하며, 게임플레이 규칙을 바꿀 땐 `unity/Assets/Tests/EditMode`의 테스트도 함께 추가/수정해 주세요.
+이후 Pull Request를 열어 주세요. `web/`과 `unity/`는 항상 [SPEC.md](SPEC.md)와 동작이 일치해야 하며, 게임플레이 규칙을 바꿀 땐 `unity/Assets/Tests/EditMode`의 테스트도 함께 추가/수정해 주세요.
 
 ---
 
