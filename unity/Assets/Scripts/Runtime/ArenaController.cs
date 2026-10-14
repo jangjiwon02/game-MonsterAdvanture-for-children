@@ -507,6 +507,7 @@ namespace MonsterAdventure
             if (tile == Tile.CenterDoor) StartCoroutine(ArenaHealScene());
             else if (tile == Tile.ShopDoor) StartCoroutine(ArenaShopScene());
             else if (tile == Tile.SchoolDoor) StartCoroutine(ArenaSchoolQuiz());
+            else if (tile == Tile.AptDoor) StartCoroutine(ArenaApartment(x, y));
         }
 
         /// <summary>남산초 수학 퀴즈. 돈·시도 기록이 바뀔 때마다 SyncState 로 서버 계정에 되돌려 보낸다.</summary>
@@ -514,6 +515,17 @@ namespace MonsterAdventure
         {
             BeginArenaScene();
             yield return SchoolQuizScene.Visit(_ui, _localState, new SystemRng(), () => System.DateTime.UtcNow, SyncState);
+            _localPlayer.Teleport(_localPlayer.TileX, _localPlayer.TileY, Direction.Down);
+            EndArenaScene();
+        }
+
+        /// <summary>아파트 미니게임. 용돈·도전 횟수가 바뀔 때마다 SyncState 로 서버 계정에 되돌려 보낸다.</summary>
+        IEnumerator ArenaApartment(int doorX, int doorY)
+        {
+            var game = WorldMap.GameAt(doorX, doorY);
+            if (game == ApartmentGame.None) yield break;
+            BeginArenaScene();
+            yield return MiniGameScenes.Visit(game, _ui, _localState, new SystemRng(), () => System.DateTime.UtcNow, SyncState);
             _localPlayer.Teleport(_localPlayer.TileX, _localPlayer.TileY, Direction.Down);
             EndArenaScene();
         }

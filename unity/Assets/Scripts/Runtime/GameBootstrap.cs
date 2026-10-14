@@ -204,6 +204,7 @@ namespace MonsterAdventure
             if (tile == Tile.CenterDoor) StartCoroutine(HealScene());
             else if (tile == Tile.ShopDoor) StartCoroutine(ShopScene());
             else if (tile == Tile.SchoolDoor) StartCoroutine(SchoolQuizRoutine());
+            else if (tile == Tile.AptDoor) StartCoroutine(ApartmentRoutine(x, y));
             // 눈에 보이는 스폰을 끄면(UseVisibleSpawns=false) 예전처럼 풀숲 한 칸 이동마다 14% 로 야생 몬스터가 나타난다.
             else if (!UseVisibleSpawns && WildEncounter.ShouldEncounter(tile, Rng))
             {
@@ -311,6 +312,17 @@ namespace MonsterAdventure
         {
             BeginScene();
             yield return SchoolQuizScene.Visit(Ui, State, Rng, () => System.DateTime.UtcNow, () => SaveStore.Save(State));
+            Player.Teleport(Player.TileX, Player.TileY, Direction.Down);
+            EndScene();
+        }
+
+        /// <summary>아파트 문: 연수주공 6단지(미로 탈출), 세경아파트(등딱지 피하기). 하루 도전 횟수 제한은 MiniGameScenes 가 판정한다.</summary>
+        public IEnumerator ApartmentRoutine(int doorX, int doorY)
+        {
+            var game = WorldMap.GameAt(doorX, doorY);
+            if (game == ApartmentGame.None) yield break;
+            BeginScene();
+            yield return MiniGameScenes.Visit(game, Ui, State, Rng, () => System.DateTime.UtcNow, () => SaveStore.Save(State));
             Player.Teleport(Player.TileX, Player.TileY, Direction.Down);
             EndScene();
         }
