@@ -37,7 +37,7 @@ namespace MonsterAdventure
                 Tile.Path => (int)(h * 20) + 100 * (int)(h * 31 % 26) + 10000 * (int)(h * 13 % 26),
                 Tile.Flower => GrassKey(h) * 4 + (int)(h * 4),
                 Tile.Wall or Tile.CenterDoor or Tile.ShopDoor or Tile.CenterRoof or Tile.ShopRoof or Tile.Water
-                    or Tile.SchoolRoof or Tile.SchoolDoor or Tile.AptRoof or Tile.AptWall => 0,
+                    or Tile.SchoolRoof or Tile.SchoolDoor or Tile.AptRoof or Tile.AptWall or Tile.AptDoor => 0,
                 _ => GrassKey(h),   // 잔디
             };
             var key = (tile, variant);
@@ -140,6 +140,15 @@ namespace MonsterAdventure
                             p.Rect(wx, wy + 4, 9, 1, C("#ffffff"));
                         }
                     p.Rect(0, Size - 2, Size, 2, C("#000000", .12f));
+                    break;
+                case Tile.AptDoor:
+                    // 벽에 파란 문 + 손잡이 + 위쪽 작은 불빛(들어갈 수 있다는 표시)
+                    p.Rect(0, 0, Size, Size, C("#e4dccb"));
+                    p.Rect(7, 6, 18, 26, C("#3a5f9a"));
+                    p.Rect(9, 8, 14, 24, C("#4f7cc4"));
+                    p.Rect(15, 8, 2, 24, C("#3a5f9a"));
+                    p.Rect(20, 20, 2, 3, C("#ffd84a"));
+                    p.Rect(12, 1, 8, 3, C("#ffd84a"));
                     break;
                 case Tile.Flower:
                     var col = new[] { "#ff6f91", "#ffd84a", "#ffffff", "#b58cff" }[(int)(h * 4)];

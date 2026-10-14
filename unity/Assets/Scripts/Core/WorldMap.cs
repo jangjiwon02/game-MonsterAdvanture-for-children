@@ -3,13 +3,14 @@ using System;
 namespace MonsterAdventure.Core
 {
     /// <summary>타일 값은 웹 버전과 같다(SPEC "월드"). 11/12는 중앙탑(아래/위) 장식.
-    /// 13~16(SchoolRoof/SchoolDoor/AptRoof/AptWall)은 웹에 없는 Unity 전용 추가 — <see cref="WorldMap.AddChungjuLandmarks"/> 참고.</summary>
+    /// 13~17(SchoolRoof/SchoolDoor/AptRoof/AptWall/AptDoor)은 웹에 없는 Unity 전용 추가 — <see cref="WorldMap.AddChungjuLandmarks"/> 참고.</summary>
     public enum Tile : byte
     {
         Grass = 0, TallGrass = 1, Tree = 2, Water = 3, Path = 4, Wall = 5,
         CenterDoor = 6, ShopDoor = 7, Flower = 8, CenterRoof = 9, ShopRoof = 10,
         TowerBase = 11, TowerTop = 12, SchoolRoof = 13, SchoolDoor = 14,
-        AptRoof = 15, AptWall = 16,   // 연수주공아파트 — 장식용(들어갈 수 없다)
+        AptRoof = 15, AptWall = 16,   // 아파트 지붕·벽(들어갈 수 없다)
+        AptDoor = 17,                 // 아파트 문 — 걸어 들어가면 그 건물의 작은 게임(ApartmentGame)
     }
 
     /// <summary>충주 시내 맵. 웹과 같은 48x36(시드 20240921)이 남쪽 부분이고, 그 위(북쪽)로 연수동까지
@@ -280,6 +281,14 @@ namespace MonsterAdventure.Core
         public const int SekyungX = 25, SekyungY = 32;
         public const string SekyungName = "세경아파트";
 
+        /// <summary>작은 게임이 있는 아파트의 문 자리(블록 맨 아래 줄 가운데). 연수주공 6단지 = 미로, 세경아파트 = 등딱지 피하기.</summary>
+        public const int MazeDoorX = 39, MazeDoorY = 14;
+        public const int ShellDoorX = SekyungX + 1, ShellDoorY = SekyungY + 2;
+
+        public static ApartmentGame GameAt(int x, int y) =>
+            x == MazeDoorX && y == MazeDoorY ? ApartmentGame.Maze :
+            x == ShellDoorX && y == ShellDoorY ? ApartmentGame.Shell : ApartmentGame.None;
+
         /// <summary>연수동 표지판 자리(풀밭 위, 왼쪽 위 칸).</summary>
         public const int YeonsuSignTileX = 24, YeonsuSignTileY = 13;
 
@@ -347,6 +356,10 @@ namespace MonsterAdventure.Core
             for (int y = SekyungY; y < SekyungY + 3; y++)
                 for (int x = SekyungX; x < SekyungX + 3; x++)
                     t[y, x] = y == SekyungY ? Tile.AptRoof : Tile.AptWall;
+
+            // 6) 작은 게임이 있는 아파트의 문.
+            t[MazeDoorY, MazeDoorX] = Tile.AptDoor;
+            t[ShellDoorY, ShellDoorX] = Tile.AptDoor;
         }
     }
 }

@@ -55,7 +55,7 @@ namespace MonsterAdventure.Tests
             foreach (var (ax, ay, _, _) in WorldMap.YeonsuApartments)
             {
                 Assert.AreEqual(Tile.AptRoof, _map[ax + 1, ay]);
-                Assert.AreEqual(Tile.AptWall, _map[ax + 1, ay + 2]);
+                Assert.AreEqual(Tile.AptWall, _map[ax, ay + 2]);   // 가운데 아랫칸은 문일 수 있다
                 Assert.IsFalse(_map.IsPassable(ax + 1, ay + 1), "아파트는 장식이라 들어갈 수 없다");
                 Assert.IsTrue(WorldMap.InYeonsu(ax + 1, ay + 1));
             }
@@ -75,7 +75,7 @@ namespace MonsterAdventure.Tests
             Assert.Less(diff, 10, $"기대 방위 {expected:F0}° 인데 세경아파트는 {toSekyung:F0}°");
 
             Assert.AreEqual(Tile.AptRoof, _map[WorldMap.SekyungX + 1, WorldMap.SekyungY]);
-            Assert.AreEqual(Tile.AptWall, _map[WorldMap.SekyungX + 1, WorldMap.SekyungY + 2]);
+            Assert.AreEqual(Tile.AptWall, _map[WorldMap.SekyungX, WorldMap.SekyungY + 2]);
             Assert.IsFalse(_map.IsPassable(WorldMap.SekyungX + 1, WorldMap.SekyungY + 1));
             // 닿을 수 있어야 한다: 블록 바로 아래 줄이 걸을 수 있다.
             var reach = ReachableFromStart();
