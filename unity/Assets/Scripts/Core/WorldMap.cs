@@ -275,6 +275,11 @@ namespace MonsterAdventure.Core
             (28, 7, "연수주공", "4·5단지"), (38, 12, "연수주공", "6단지"), (38, 7, "연수주공", "7단지"),
         };
 
+        /// <summary>세경아파트(3x3 블록의 왼쪽 위 칸). 위치는 실제 지리가 아니라 지시한 방향에 맞췄다 — 아동센터에서 남산초등학교로 가는
+        /// 방향을 기준으로 시계 방향 270도(= 북북동쪽)로 약 14칸 간 곳, 호수 북쪽 큰길 바로 위 빈 풀밭. 장식이라 들어갈 수 없다.</summary>
+        public const int SekyungX = 25, SekyungY = 32;
+        public const string SekyungName = "세경아파트";
+
         /// <summary>연수동 표지판 자리(풀밭 위, 왼쪽 위 칸).</summary>
         public const int YeonsuSignTileX = 24, YeonsuSignTileY = 13;
 
@@ -337,6 +342,11 @@ namespace MonsterAdventure.Core
                 for (int y = ay; y < ay + 3; y++)
                     for (int x = ax; x < ax + 3; x++)
                         t[y, x] = y == ay ? Tile.AptRoof : Tile.AptWall;
+
+            // 5) 세경아파트.
+            for (int y = SekyungY; y < SekyungY + 3; y++)
+                for (int x = SekyungX; x < SekyungX + 3; x++)
+                    t[y, x] = y == SekyungY ? Tile.AptRoof : Tile.AptWall;
         }
     }
 }
