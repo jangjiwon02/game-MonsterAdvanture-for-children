@@ -63,6 +63,26 @@ namespace MonsterAdventure.Tests
         }
 
         [Test]
+        public void SekyungApartment_StandsClockwise270DegreesFromTheCenterToNamsanDirection()
+        {
+            // 센터(아동센터 건물 중심) → 남산초등학교 방향의 방위각(북 0°, 시계 방향)에 270°를 더한 방향이어야 한다.
+            double Bearing(double dx, double dy) => (System.Math.Atan2(dx, -dy) * 180 / System.Math.PI + 360) % 360;
+            double cx = WorldMap.VillageX - 3, cy = WorldMap.VillageY - 3.5;
+            double toNamsan = Bearing(WorldMap.NamsanTileX - cx, WorldMap.NamsanTileY - 0.5 - cy);
+            double expected = (toNamsan + 270) % 360;
+            double toSekyung = Bearing(WorldMap.SekyungX + 1 - cx, WorldMap.SekyungY + 1 - cy);
+            double diff = System.Math.Abs(((toSekyung - expected + 540) % 360) - 180);
+            Assert.Less(diff, 10, $"기대 방위 {expected:F0}° 인데 세경아파트는 {toSekyung:F0}°");
+
+            Assert.AreEqual(Tile.AptRoof, _map[WorldMap.SekyungX + 1, WorldMap.SekyungY]);
+            Assert.AreEqual(Tile.AptWall, _map[WorldMap.SekyungX + 1, WorldMap.SekyungY + 2]);
+            Assert.IsFalse(_map.IsPassable(WorldMap.SekyungX + 1, WorldMap.SekyungY + 1));
+            // 닿을 수 있어야 한다: 블록 바로 아래 줄이 걸을 수 있다.
+            var reach = ReachableFromStart();
+            Assert.IsTrue(reach.Contains((WorldMap.SekyungX + 1, WorldMap.SekyungY + 3)));
+        }
+
+        [Test]
         public void Yeonsu_IsReachableOnFootFromTheVillage_AndMostOfTheMapIsConnected()
         {
             var reach = ReachableFromStart();

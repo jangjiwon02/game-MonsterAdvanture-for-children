@@ -45,6 +45,7 @@ namespace MonsterAdventure
             // 연수동: 연수주공아파트 단지 표지판 + 동네 표지판(장식 — 들어갈 수는 없다)
             foreach (var (ax, ay, l1, l2) in WorldMap.YeonsuApartments)
                 BuildSign(ax, ay, new[] { l1, l2 }, "#5f6678");
+            BuildSign(WorldMap.SekyungX, WorldMap.SekyungY, new[] { WorldMap.SekyungName }, "#5f6678");
             BuildSign(WorldMap.YeonsuSignTileX, WorldMap.YeonsuSignTileY, new[] { "연수동" }, "#2d5f8a");
 
             // 실제 충주 도로명 표지판(한국 도로 표지판 느낌의 청색). 건물이 아니라 길바닥 옆이라 살짝 옆으로 띄운다.
